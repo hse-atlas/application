@@ -57,7 +57,7 @@
 
    ```bash
    git clone https://github.com/hse-atlas/application
-   cd hse-atlas
+   cd application
    ```
 
 2. **Запустить приложение в Docker:**
