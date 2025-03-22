@@ -1,0 +1,16 @@
+fastapi[all]==0.104.1
+uvicorn[standard]==0.24.0
+pydantic[email]==2.4.2
+SQLAlchemy[asyncio]==2.0.23
+asyncpg==0.28.0
+psycopg2-binary==2.9.9
+python-jose[cryptography]==3.3.0
+passlib[argon2]==1.7.4
+redis==5.0.1
+httpx==0.25.1
+alembic==1.12.1
+slowapi==0.1.8
+starlette==0.27.0
+email-validator==2.1.0.post1
+itsdangerous==2.1.2
+slowapi

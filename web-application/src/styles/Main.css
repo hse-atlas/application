@@ -1,0 +1,32 @@
+/* Основной контейнер Main */
+.page-container{
+    background-color: #f0f2f5; 
+    height: 100dvh;
+}
+.main-container {
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  
+  /* Заголовок с профилем */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  
+  /* Контейнер для проектов, занимающий почти всю высоту */
+  .projects-container {
+    flex: 1;
+    justify-content: center;
+    align-items: center;
+    border: 2px solid #d9d9d9;
+    border-radius: 10px;
+    background-color: #fafafa;
+    min-height: calc(100dvh - 330px); /* Высота почти до конца страницы */
+    box-sizing: border-box; /* Учитываем padding в расчёте высоты */
+  }

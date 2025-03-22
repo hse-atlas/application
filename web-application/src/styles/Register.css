@@ -1,0 +1,49 @@
+/* Основной контейнер для страницы регистрации */
+.register-page-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background-color: #f0f2f5; /* Легкий фон для страницы */
+  }
+  
+  /* Контейнер для формы регистрации */
+  .register-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 400px; /* Ограничиваем максимальную ширину формы */
+    background-color: #ffffff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Стиль для заголовка */
+  .register-container .ant-typography {
+    margin-bottom: 20px; /* Отступ снизу */
+  }
+  
+  /* Контейнер для формы */
+  .form-container {
+    width: 100%;
+  }
+  
+  /* Ссылка для логина */
+  .login-link {
+    margin-top: 15px;
+    text-align: center;
+  }
+  
+  /* Стили для ссылки логина */
+  .login-link a {
+    color: #1890ff;
+    text-decoration: none;
+  }
+  
+  .login-link a:hover {
+    text-decoration: underline;
+  }
+  

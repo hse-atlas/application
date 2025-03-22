@@ -1,0 +1,92 @@
+/* profile.css */
+
+/* Общие стили для страницы профиля */
+.profile-page-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background-color: #f0f2f5;
+    padding: 20px;
+  }
+  
+  .profile-card {
+    width: 100%;
+    max-width: 500px;
+    background-color: #ffffff;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+  
+  .user-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  
+  .user-header .ant-avatar {
+    background-color: #243168;
+    margin-bottom: 10px;
+  }
+  
+  .user-name {
+    margin: 0;
+    text-align: center;
+  }
+  
+  .profile-details {
+    margin-bottom: 20px;
+  }
+  
+  .detail-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  
+  .detail-icon {
+    margin-right: 8px;
+    font-size: 16px;
+    color: #243168;
+  }
+  
+  .ant-typography {
+    font-size: 16px;
+  }
+  
+  .edit-profile-button {
+    width: 100%;
+  }
+  
+  /* Стили для кнопки "Edit Profile" */
+  .edit-profile-button[type="primary"] {
+    background-color: #243168;
+    border-color: #243168;
+    color: #ffffff;
+    font-weight: bold;
+  }
+  
+  .edit-profile-button[type="primary"]:hover {
+    background-color: #1a2540;
+    border-color: #1a2540;
+  }
+  
+  /* Добавление отступов и рамки для карточки */
+  .profile-card {
+    padding: 20px;
+  }
+  
+  @media (max-width: 768px) {
+    /* Мобильные стили */
+    .profile-card {
+      width: 100%;
+      padding: 20px;
+    }
+  
+    .profile-page-container {
+      padding: 10px;
+    }
+  }
+  

@@ -1,0 +1,44 @@
+/* Основной контейнер для страницы */
+.login-page-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100dvh;
+    background-color: #f0f2f5; 
+  }
+  
+  /* Контейнер формы */
+  .login-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 400px;
+    background-color: #ffffff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Контейнер для формы */
+  .form-container {
+    width: 100%;
+  }
+  
+  /* Ссылка для регистрации */
+  .register-link {
+    margin-top: 15px;
+    text-align: center;
+  }
+  
+  /* Стили для ссылки регистрации */
+  .register-link a {
+    color: #1890ff;
+    text-decoration: none;
+  }
+  
+  .register-link a:hover {
+    text-decoration: underline;
+  }
+  
