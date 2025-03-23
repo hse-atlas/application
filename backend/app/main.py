@@ -15,7 +15,7 @@ from app.user_auth import router as user_auth_router
 from app.oauth import router as oauth_router
 from app.security import security_config
 from app.jwt_auth import auth_middleware, get_async_session
-from app.user_roles import router as user_roles_router #роли
+from app.user_roles import router as user_roles_router  # роли
 
 # Настройка логирования
 logging.basicConfig(
@@ -71,13 +71,14 @@ async def rate_limit_handler(request, exc):
         content={"detail": "Too many requests. Please try again later."}
     )
 
+
 @application.middleware("http")
 async def auth_middleware_wrapper(request: Request, call_next):
     # Явная инициализация состояния
     request.state.user_type = "guest"  # <-- Ключевое исправление
     request.state.new_access_token = None
     request.state.new_refresh_token = None
-    
+
     # Инициализация логов для запроса
     log_context = {
         "path": request.url.path,
@@ -85,58 +86,69 @@ async def auth_middleware_wrapper(request: Request, call_next):
         "client": request.client.host if request.client else "unknown",
         "user_type": request.state.user_type  # Добавляем в логи
     }
-    
+
     logger.info("Starting authentication middleware", extra=log_context)
-    
+
     try:
         # Получаем сессию БД с логированием
         logger.debug("Acquiring database session")
         db = get_async_session()
-        
+
         async for session in db:
             try:
                 logger.debug("Database session acquired", extra=log_context)
-                
+
                 # Обновляем user_type в логах
                 log_context["user_type"] = request.state.user_type
-                
+
                 # Логируем начало обработки
                 logger.debug("Executing auth middleware logic", extra=log_context)
-                
+
                 # Выполняем основную логику
                 result = await auth_middleware(request, session)
-                
+
                 # Обновляем логи после обработки
                 log_context["user_type"] = request.state.user_type
-                
+
                 # Логируем успешное завершение
                 if result:
                     logger.info("Authentication successful", extra=log_context)
-                
+
+                # Логируем новую информацию о токенах (для "скользящего окна")
+                if hasattr(request.state, "new_access_token") and request.state.new_access_token:
+                    logger.info("Tokens refreshed using sliding window mechanism", extra={
+                        **log_context,
+                        "token_refresh": True
+                    })
+
             except Exception as e:
                 # Фиксируем текущий user_type при ошибке
                 log_context["user_type"] = getattr(request.state, "user_type", "error")
-                logger.error("Auth middleware processing failed", 
-                           exc_info=True,
-                           extra={**log_context, "error": str(e)})
+                logger.error("Auth middleware processing failed",
+                             exc_info=True,
+                             extra={**log_context, "error": str(e)})
                 raise
-                
+
             finally:
                 logger.debug("Releasing database session", extra=log_context)
-                
+
     except Exception as e:
         # Фиксируем финальный user_type
         log_context["user_type"] = getattr(request.state, "user_type", "error")
-        logger.critical("Authentication middleware failed", 
-                      exc_info=True,
-                      extra={**log_context, "error": str(e)})
+        logger.critical("Authentication middleware failed",
+                        exc_info=True,
+                        extra={**log_context, "error": str(e)})
         raise
-        
+
     # Фиксируем итоговый статус
     log_context["user_type"] = request.state.user_type
     logger.info("Authentication middleware completed", extra=log_context)
-    
-    return await call_next(request)
+
+    # Выполняем обработку запроса
+    response = await call_next(request)
+
+    return response
+
 
 # Middleware для установки токенов в ответы
 @application.middleware("http")
@@ -144,8 +156,12 @@ async def token_middleware(request: Request, call_next):
     # Запуск эндпоинта
     response = await call_next(request)
 
-    # Если в request.state есть новые токены, добавляем их в ответ
-    if hasattr(request.state, "new_access_token"):
+    # Проверяем наличие новых токенов в request.state
+    if hasattr(request.state, "new_access_token") and request.state.new_access_token:
+        logger.debug("Setting new access token in response",
+                     extra={"path": request.url.path, "user_type": request.state.user_type})
+
+        # Устанавливаем новый access token
         response.set_cookie(
             key=(
                 "admins_access_token"
@@ -158,7 +174,11 @@ async def token_middleware(request: Request, call_next):
             samesite="strict"
         )
 
-    if hasattr(request.state, "new_refresh_token"):
+    if hasattr(request.state, "new_refresh_token") and request.state.new_refresh_token:
+        logger.debug("Setting new refresh token in response",
+                     extra={"path": request.url.path, "user_type": request.state.user_type})
+
+        # Устанавливаем новый refresh token
         response.set_cookie(
             key=(
                 "admins_refresh_token"
@@ -180,8 +200,7 @@ application.include_router(user_auth_router, prefix="/api/v1/AuthService")
 application.include_router(project_crud_router, prefix="/projects")
 application.include_router(user_crud_router, prefix="/users")
 application.include_router(oauth_router, prefix="/api/v1/AuthService")
-application.include_router(user_roles_router) #роли
-
+application.include_router(user_roles_router)  # роли
 
 
 # Корневой эндпоинт
@@ -195,6 +214,7 @@ async def root(request: Request):
 @application.get("/health")
 async def health():
     return {"status": "healthy"}
+
 
 # События при запуске и остановке приложения
 @application.on_event("startup")

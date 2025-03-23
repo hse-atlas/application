@@ -24,6 +24,10 @@ REFRESH_TOKEN_EXPIRE_DAYS = config.REFRESH_TOKEN_EXPIRE_DAYS
 ALGORITHM = config.ALGORITHM
 SECRET_KEY = get_auth_data()["secret_key"]
 
+# Новая константа для скользящего окна (процент срока действия токена)
+# Если текущее время > (срок истечения - TOKEN_REFRESH_WINDOW_PERCENT), то обновляем токен
+TOKEN_REFRESH_WINDOW_PERCENT = 0.3  # 70% от срока действия токена
+
 
 async def get_async_session() -> AsyncSession:
     async with async_session_maker() as session:
@@ -142,11 +146,39 @@ async def revoke_all_user_tokens(user_id: str):
     return True
 
 
-# Middleware для проверки и обновления токенов
-async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async_session)):
-    # Эта функция предполагается для использования как middleware в FastAPI
+# Проверяет, нужно ли обновить токен на основе скользящего окна
+async def should_refresh_token(payload) -> bool:
+    if payload.get("type") != "access":
+        return False
 
-    # Проверяем наличие access токена в куках
+    exp = payload.get("exp")
+    if not exp:
+        return False
+
+    # Рассчитываем время истечения срока действия
+    expiration_time = datetime.fromtimestamp(exp, tz=timezone.utc)
+    current_time = datetime.now(timezone.utc)
+
+    # Получаем время создания токена (если нет, используем текущее время минус стандартное время жизни)
+    issued_at = payload.get("iat")
+    if not issued_at:
+        issued_at_time = current_time - timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    else:
+        issued_at_time = datetime.fromtimestamp(issued_at, tz=timezone.utc)
+
+    # Рассчитываем полную длительность действия токена
+    token_lifetime = expiration_time - issued_at_time
+
+    # Рассчитываем порог обновления
+    refresh_threshold = expiration_time - (token_lifetime * TOKEN_REFRESH_WINDOW_PERCENT)
+
+    # Если текущее время после порога обновления, то обновляем токен
+    return current_time >= refresh_threshold
+
+
+# Middleware для проверки и обновления токенов - модифицированная версия с "скользящим окном"
+async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async_session)):
+    # Получаем токены из cookies или заголовка Authorization
     access_token = request.cookies.get("admins_access_token") or request.cookies.get("users_access_token")
 
     # Или в заголовке Authorization
@@ -191,6 +223,9 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
         is_admin_route = request.url.path.startswith("/api/v1/AuthService/admin") or request.url.path.startswith(
             "/projects/owner")
 
+        # Определяем user_type для логирования
+        user_type = None
+
         if is_admin_route:
             result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
             user = result.scalar_one_or_none()
@@ -203,6 +238,7 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
             # Добавляем информацию о пользователе в request.state
             request.state.user = user
             request.state.user_type = "admin"
+            user_type = "admin"
         else:
             result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
             user = result.scalar_one_or_none()
@@ -215,6 +251,20 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
             # Добавляем информацию о пользователе в request.state
             request.state.user = user
             request.state.user_type = "user"
+            user_type = "user"
+
+        # СКОЛЬЗЯЩЕЕ ОКНО: проверяем, нужно ли обновить токен
+        if user_type == "admin" and await should_refresh_token(payload):
+            # Создаем новые токены для скользящего окна только для админов
+            new_access_token = await create_access_token({"sub": user_id})
+            new_refresh_token = await create_refresh_token({"sub": user_id})
+
+            # Устанавливаем новые токены в request.state, чтобы они были добавлены в ответ
+            request.state.new_access_token = new_access_token
+            request.state.new_refresh_token = new_refresh_token
+
+            # Отзываем старый токен, чтобы он не мог быть использован
+            await revoke_token(access_token)
 
         return user
 
