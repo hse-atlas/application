@@ -2,12 +2,25 @@ import React from "react";
 import { Avatar, Dropdown, Menu } from "antd";
 import { useNavigate } from "react-router-dom";
 import { UserOutlined, LogoutOutlined } from "@ant-design/icons";
+import tokenRefreshService from "../services/tokenRefreshService";
 
 const ProfileMenu = () => {
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    localStorage.clear(); // Полностью очищаем localStorage
+    // Останавливаем сервис обновления токенов
+    tokenRefreshService.stop();
+
+    // Очищаем localStorage
+    localStorage.clear();
+
+    // Очищаем cookies для токенов
+    document.cookie = "admins_access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    document.cookie = "admins_refresh_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    document.cookie = "users_access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    document.cookie = "users_refresh_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+
+    // Перенаправляем на страницу логина
     navigate("/login");
   };
 

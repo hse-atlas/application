@@ -1,13 +1,13 @@
 import React, { useState } from "react";
-import { Form, Input, Button, Typography, message } from "antd"; // Импортируем message
+import { Form, Input, Button, Typography, message } from "antd";
 import { useNavigate } from "react-router-dom";
-import axios from "axios"; // Импортируем axios
 import { login } from "../api";
+import tokenRefreshService from "../services/tokenRefreshService";
 import "../styles/Login.css";
 
 const { Title, Text } = Typography;
 
-const Login = (onLogin) => {
+const Login = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -26,10 +26,16 @@ const Login = (onLogin) => {
       localStorage.setItem("access_token", access_token);
       localStorage.setItem("refresh_token", refresh_token);
 
-      // Временное перенаправление на главную страницу
+      // Запускаем сервис автоматического обновления токенов
+      tokenRefreshService.start();
+
+      // Сообщение об успешном входе
+      message.success("Login successful!");
+
+      // Перенаправление на главную страницу
       setTimeout(() => {
         setLoading(false);
-        navigate("/"); // Перенаправление на главную страницу
+        navigate("/");
       }, 1000);
     } catch (error) {
       // Обработка ошибок
@@ -43,7 +49,7 @@ const Login = (onLogin) => {
     }
   };
 
-  return (
+return (
     <div className="login-page-container">
       <div className="login-container">
         <Title level={2}>Welcome</Title>

@@ -259,17 +259,27 @@ async def get_project_details(
 @router.get("/getURL/{project_id}", response_model=str)
 async def get_project_url(
         project_id: int,
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession = Depends(get_async_session),
+        current_admin=Depends(get_current_admin)
 ):
     """
     Получение URL проекта по его ID.
     """
-    stmt = select(ProjectsBase.url).where(ProjectsBase.id == project_id)
+    # Проверяем, владеет ли текущий админ данным проектом
+    stmt = select(ProjectsBase).where(
+        ProjectsBase.id == project_id,
+        ProjectsBase.owner_id == current_admin.id
+    )
     result = await session.execute(stmt)
-    project_url = result.scalar_one_or_none()
-    if not project_url:
-        raise HTTPException(status_code=404, detail="Проект не найден")
-    return project_url
+    project = result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="У вас нет прав для просмотра URL этого проекта или проект не существует"
+        )
+
+    return project.url
 
 
 @router.put("/{project_id}/oauth", response_model=ProjectOut)
