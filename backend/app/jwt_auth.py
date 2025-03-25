@@ -26,7 +26,7 @@ SECRET_KEY = get_auth_data()["secret_key"]
 
 # Новая константа для скользящего окна (процент срока действия токена)
 # Если текущее время > (срок истечения - TOKEN_REFRESH_WINDOW_PERCENT), то обновляем токен
-TOKEN_REFRESH_WINDOW_PERCENT = 0.3  # 70% от срока действия токена
+TOKEN_REFRESH_WINDOW_PERCENT = 0.7  # 70% от срока действия токена
 
 
 async def get_async_session() -> AsyncSession:
