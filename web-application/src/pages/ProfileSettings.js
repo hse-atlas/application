@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+/*import React, { useState } from "react";
 import {
   Card,
   Avatar,
@@ -24,11 +24,7 @@ const ProfileSettings = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate(); // Инициализация хука для навигации
 
-  // Данные пользователя
-  const userData = {
-    username: localStorage.getItem("Login"),
-    email: localStorage.getItem("Email"),
-  };
+
 
   const onFinish = (values) => {
     console.log("Submitted Values:", values);
@@ -51,7 +47,6 @@ const ProfileSettings = () => {
   return (
     <div className="profile-settings-container">
       <Card className="profile-card">
-        {/* Кнопка назад с уменьшенными размерами */}
         <Button
           icon={<ArrowLeftOutlined />}
           onClick={handleBackClick}
@@ -121,3 +116,4 @@ const ProfileSettings = () => {
 };
 
 export default ProfileSettings;
+*/

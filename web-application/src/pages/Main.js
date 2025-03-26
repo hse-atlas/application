@@ -23,15 +23,13 @@ const Main = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const accessToken = localStorage.getItem("access_token");
-
         // Сначала получаем данные пользователя
-        const userResponse = await getMe(accessToken);
+        const userResponse = await getMe();
         console.log("Current user data:", userResponse.data);
         dispatch(setUserData(userResponse.data)); // Сохраняем в Redux
 
         // Затем получаем проекты
-        const projectsResponse = await getProjects(accessToken);
+        const projectsResponse = await getProjects();
         setProjects(projectsResponse.data);
       } catch (error) {
         console.error("Error fetching data:", error);

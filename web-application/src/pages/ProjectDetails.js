@@ -48,8 +48,7 @@ const ProjectDetails = () => {
   useEffect(() => {
     const fetchProjectDetails = async () => {
       try {
-        const access_token = localStorage.getItem("access_token");
-        const response = await getProjectDetails(access_token, id);
+        const response = await getProjectDetails(id);
         setProject(response.data);
         setUsers(response.data.users);
       } catch (error) {
@@ -73,8 +72,7 @@ const ProjectDetails = () => {
 
   const handleDelete = async () => {
     try {
-      const access_token = localStorage.getItem("access_token");
-      await deleteProject(access_token, id);
+      await deleteProject(id);
       message.success("Project deleted successfully");
       navigate("/");
     } catch (error) {
@@ -93,8 +91,7 @@ const ProjectDetails = () => {
 
   const handleDeleteUser = async (userId) => {
     try {
-      const access_token = localStorage.getItem("access_token");
-      await deleteUser(access_token, userId);
+      await deleteUser(userId);
       setUsers((prev) => prev.filter((user) => user.id !== userId));
       message.success("User deleted successfully");
     } catch (error) {
@@ -104,8 +101,6 @@ const ProjectDetails = () => {
 
   const handleRoleChange = async (userId, newRole) => {
     try {
-      const access_token = localStorage.getItem("access_token");
-
       // Преобразуем project_id и user_id в числа
       const projectId = parseInt(id, 10);
       const userIdNumber = parseInt(userId, 10);
@@ -117,7 +112,7 @@ const ProjectDetails = () => {
       });
 
       // Отправляем запрос на сервер
-      await changeUserRole(access_token, projectId, userIdNumber, newRole);
+      await changeUserRole(projectId, userIdNumber, newRole);
 
       // Обновляем состояние users
       setUsers((prev) =>
@@ -195,7 +190,7 @@ const ProjectDetails = () => {
     },
   ];
 
-  // Функция для определения цвета тега в зависимости от роли
+  {/*  // Функция для определения цвета тега в зависимости от роли
   const getRoleColor = (role) => {
     switch (role.toLowerCase()) {
       case "admin":
@@ -203,7 +198,7 @@ const ProjectDetails = () => {
       default:
         return "green";
     }
-  };
+  };*/}
 
   if (loading) return <Spin size="large" fullscreen />;
   if (error) return <Alert message={error} type="error" showIcon fullscreen />;

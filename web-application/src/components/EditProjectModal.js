@@ -17,10 +17,9 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
   const handleSave = async () => {
     try {
       const values = await form.validateFields();
-      const accessToken = localStorage.getItem("access_token"); // Получаем токен
 
       // Вызываем API-метод
-      const response = await editeProject(accessToken, id, values);
+      const response = await editeProject(id, values);
 
       if (response.status === 200) {
         message.success("Project updated successfully");

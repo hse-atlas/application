@@ -29,7 +29,6 @@ const AddProject = ({ visible, onCancel, onAdd }) => {
 
   const handleAddProject = async (values) => {
     try {
-      const access_token = localStorage.getItem("access_token");
 
       // Формируем данные для отправки
       const requestData = {
@@ -50,7 +49,7 @@ const AddProject = ({ visible, onCancel, onAdd }) => {
       console.log("Sending data to server:", requestData);
 
       // Отправляем запрос
-      const response = await addProject(access_token, requestData);
+      const response = await addProject(requestData);
 
       // Обработка успешного ответа
       onAdd(response.data);
@@ -98,8 +97,17 @@ const AddProject = ({ visible, onCancel, onAdd }) => {
           <Input.TextArea placeholder="Enter project description" />
         </Form.Item>
 
-        <Form.Item name="URL" label="Project URL">
-          <Input placeholder="Enter project URL (optional)" />
+        <Form.Item
+          name="url"
+          label="Project URL"
+          rules={[
+            {
+              type: "url",
+              message: "Please enter a valid URL!",
+            },
+          ]}
+        >
+          <Input placeholder="Enter project URL" />
         </Form.Item>
 
         <Form.Item label="Enable OAuth">
