@@ -36,6 +36,8 @@ function App() {
         <Route path="/settings" element={<ProfileSettings />} />
         <Route path="/userRegister/:id" element={<UserRegister />} />
         <Route path="/userLogin/:id" element={<UserLogin />} />
+        <Route path="/embed/login/:id" element={<UserLoginEmbed />} />
+        <Route path="/embed/register/:id" element={<UserRegisterEmbed />} />
       </Routes>
     </Router>
   );
