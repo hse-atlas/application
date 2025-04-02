@@ -38,11 +38,11 @@ services:
     networks:
       - atlas_network
 
-  auth_service:
+  backend:
     build:
       context: ./backend
       dockerfile: dockerfile
-    container_name: atlas_auth_service
+    container_name: atlas_backend
     restart: always
     depends_on:
       db:
@@ -91,42 +91,57 @@ services:
     networks:
       - atlas_network
 
+  traefik:
+    image: traefik:v2.10
+    container_name: atlas_traefik
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.letsencrypt.acme.email=${SSL_EMAIL}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Dashboard (опционально)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/letsencrypt:/letsencrypt
+    networks:
+      - atlas_network
+    labels:
+      - "traefik.enable=true"
+      # Dashboard (опционально)
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN}`)"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik.middlewares=auth"
+      - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_AUTH_CREDENTIALS}"
+
   frontend:
     build: 
       context: ./web-application
       dockerfile: Dockerfile
     container_name: atlas_frontend
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-    - ./certbot/conf:/etc/letsencrypt
-    - ./certbot/www:/var/www/certbot
-    - ./web-application/nginx.conf:/etc/nginx/conf.d/default.conf
-    - ./certbot/conf/live:/etc/letsencrypt/live
     networks:
       - atlas_network
-    depends_on:
-      - auth_service
-      - certbot
-
-  certbot:
-    image: certbot/certbot
-    container_name: atlas_certbot
-    volumes:
-      - ./certbot/www:/var/www/certbot
-      - ./certbot/conf:/etc/letsencrypt
-    entrypoint: "/bin/sh -c"
-    command: |
-      "trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;"
-    networks:
-      - atlas_network
-
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.routers.frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+      - "traefik.http.routers.frontend-redir.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.frontend-redir.entrypoints=web"
+      - "traefik.http.routers.frontend-redir.middlewares=redirect-to-https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+ 
 volumes:
   postgres_data:
   redis_data:
-  certbot_www:
-  certbot_conf:
+
 
 networks:
   atlas_network:
