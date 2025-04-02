@@ -19,25 +19,26 @@ const Main = () => {
   const dispatch = useDispatch();
   const user = useSelector((state) => state.user.data);
   // Загрузка проектов при монтировании компонента
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // Сначала получаем данные пользователя
         const userResponse = await getMe();
-        console.log("Current user data:", userResponse.data);
-        dispatch(setUserData(userResponse.data)); // Сохраняем в Redux
+        dispatch(setUserData(userResponse.data));
 
-        // Затем получаем проекты
         const projectsResponse = await getProjects();
-        setProjects(projectsResponse.data);
+        // Защита от не-массивов и undefined
+        const safeProjects = Array.isArray(projectsResponse?.data)
+          ? projectsResponse.data
+          : [];
+        setProjects(safeProjects);
       } catch (error) {
         console.error("Error fetching data:", error);
       } finally {
         setLoading(false);
       }
     };
-
     fetchData();
   }, []);
 
