@@ -9,8 +9,8 @@ import Profile from "./pages/Profile";
 import ProjectDetails from "./pages/ProjectDetails";
 import UserRegister from "./pages/UserRegister";
 import UserLogin from "./pages/UserLogin";
-import UserLoginEmbed from "./pages/UserLoginEmbed";
-import UserRegisterEmbed from "./pages/UserRegisterEmbed";
+import UserLoginEmbed from "./components/UserLoginEmbed";
+import UserRegisterEmbed from "./components/UserRegisterEmbed";
 import tokenRefreshService from "./services/tokenRefreshService";
 
 function App() {
