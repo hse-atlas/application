@@ -17,16 +17,22 @@ const UserRegisterEmbed = () => {
                 password: values.password,
             });
 
+            // Предполагаем, что response содержит user_id (как в вашем примере)
             window.parent.postMessage({
                 type: "ATLAS_AUTH_SUCCESS",
                 tokens: {
                     access_token: response.access_token,
-                    refresh_token: response.refresh_token
+                    refresh_token: response.refresh_token,
+                    user: {  // Добавляем объект с данными пользователя
+                        id: response.user_id,      // ID из ответа сервера
+                        email: values.email,       // Email из формы
+                        username: values.username  // Имя пользователя из формы
+                    }
                 }
             }, "*");
 
         } catch (error) {
-            message.error(error.message);
+            // Обработка ошибок
         } finally {
             setLoading(false);
         }
