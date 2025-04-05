@@ -14,7 +14,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${PASS_DB_USER}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${PASS_DB_USER}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -31,7 +31,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
       interval: 5s
       timeout: 30s
       retries: 50
@@ -102,13 +102,13 @@ services:
       - --certificatesresolvers.letsencrypt.acme.email=${SSL_EMAIL}
       - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
       - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
-      - --api.dashboard=true  # Включить веб-интерфейс
-      - --api.insecure=true   # Разрешить HTTP-доступ (для теста)
+      - --api.dashboard=true # Включить веб-интерфейс
+      - --api.insecure=true # Разрешить HTTP-доступ (для теста)
 
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080"  # Dashboard (опционально)
+      - "8080:8080" # Dashboard (опционально)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/letsencrypt:/letsencrypt
@@ -123,10 +123,12 @@ services:
       - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_AUTH_CREDENTIALS}"
 
   frontend:
-    build: 
+    build:
       context: ./web-application
       dockerfile: Dockerfile
     container_name: atlas_frontend
+    depends_on:
+      - backend
     networks:
       - atlas_network
     labels:
@@ -139,7 +141,7 @@ services:
       - "traefik.http.routers.frontend-redir.entrypoints=web"
       - "traefik.http.routers.frontend-redir.middlewares=redirect-to-https"
       - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
- 
+
 volumes:
   postgres_data:
   redis_data:
