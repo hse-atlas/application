@@ -102,6 +102,9 @@ services:
       - --certificatesresolvers.letsencrypt.acme.email=${SSL_EMAIL}
       - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
       - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+      - --api.dashboard=true  # Включить веб-интерфейс
+      - --api.insecure=true   # Разрешить HTTP-доступ (для теста)
+
     ports:
       - "80:80"
       - "443:443"
@@ -114,7 +117,6 @@ services:
     labels:
       - "traefik.enable=true"
       # Dashboard (опционально)
-      - "traefik.http.routers.traefik.rule=Host(`traefik.${DOMAIN}`)"
       - "traefik.http.routers.traefik.service=api@internal"
       - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
       - "traefik.http.routers.traefik.middlewares=auth"
