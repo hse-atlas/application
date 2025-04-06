@@ -1,7 +1,7 @@
 from uuid import UUID
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from sqlalchemy import func, select
+from sqlalchemy import func, select, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_maker
@@ -202,15 +202,20 @@ async def get_project_details(
             func.count(UsersBase.id).label("user_count"),
         )
         .outerjoin(UsersBase, UsersBase.project_id == ProjectsBase.id)
-        .where(ProjectsBase.id == project_id, ProjectsBase.owner_id == current_admin.id)
+        .where(
+            cast(ProjectsBase.id, String) == str(project_id),
+            ProjectsBase.owner_id == current_admin.id
+        )
         .group_by(ProjectsBase.id)
     )
+
     project_result = await session.execute(project_stmt)
     project_row = project_result.first()
-    
+
     if not project_row:
         raise HTTPException(
-            status_code=404, detail="Проект не найден или доступ запрещён"
+            status_code=404,
+            detail="Проект не найден или доступ запрещён"
         )
 
     # Запрос для получения пользователей с их ролями
@@ -219,12 +224,12 @@ async def get_project_details(
             UsersBase.id,
             UsersBase.login,
             UsersBase.email,
-            UsersBase.role,  # Добавляем поле с ролью
+            UsersBase.role,
             UsersBase.oauth_provider
         )
-        .where(UsersBase.project_id == project_id)
+        .where(UsersBase.project_id == str(project_id))
     )
-    
+
     users_result = await session.execute(users_stmt)
     users = users_result.all()
 
@@ -234,7 +239,7 @@ async def get_project_details(
             id=user.id,
             login=user.login,
             email=user.email,
-            role=user.role,  # Добавляем роль в ответ
+            role=user.role,
             oauth_provider=user.oauth_provider
         ) for user in users
     ]
