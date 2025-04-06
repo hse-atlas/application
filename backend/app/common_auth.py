@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_maker
 from app.schemas import TokenResponse
+from app.jwt_auth import refresh_tokens
+
 # Создаем лимитер для защиты от брутфорс-атак
 limiter = Limiter(key_func=get_remote_address)
 
