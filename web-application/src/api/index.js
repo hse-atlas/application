@@ -426,3 +426,4 @@ export const updateProjectOAuth = async (project_id, oauth_settings) => {
   } catch (error) {
     throw error;
   }
+};
