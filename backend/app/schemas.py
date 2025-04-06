@@ -207,7 +207,7 @@ class ProjectOut(BaseModel):
 
 
 class UserResponse(BaseModel):
-    id: UUID
+    id: int
     login: str
     email: str
     role: str
