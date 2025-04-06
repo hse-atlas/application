@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { Form, Input, Button, message } from "antd";
 import { useParams } from "react-router-dom";
-import { loginUser } from "../api";
+import { loginUser, isValidUUID } from "../api"; // Импортируем isValidUUID
 
 const UserLoginEmbed = () => {
     const [loading, setLoading] = useState(false);
@@ -11,6 +11,11 @@ const UserLoginEmbed = () => {
     const onFinish = async (values) => {
         setLoading(true);
         try {
+            // Проверяем, что ID является валидным UUID
+            if (!isValidUUID(projectId)) {
+                throw new Error("Invalid project ID format");
+            }
+
             const response = await loginUser(projectId, {
                 email: values.email,
                 password: values.password,

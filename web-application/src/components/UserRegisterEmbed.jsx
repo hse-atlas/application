@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { Form, Input, Button, message } from "antd";
 import { useParams } from "react-router-dom";
-import { registerUser } from "../api";
+import { registerUser, isValidUUID } from "../api"; // Импортируем isValidUUID
 
 const UserRegisterEmbed = () => {
     const [loading, setLoading] = useState(false);
@@ -11,6 +11,11 @@ const UserRegisterEmbed = () => {
     const onFinish = async (values) => {
         setLoading(true);
         try {
+            // Проверяем, что ID является валидным UUID
+            if (!isValidUUID(projectId)) {
+                throw new Error("Invalid project ID format");
+            }
+
             const response = await registerUser(projectId, {
                 login: values.username,
                 email: values.email,
@@ -23,11 +28,11 @@ const UserRegisterEmbed = () => {
                 tokens: {
                     access_token: response.access_token,
                     refresh_token: response.refresh_token,
-                    user: {  // Добавляем объект с данными пользователя
-                        id: response.user_id,      // ID из ответа сервера
-                        email: values.email,       // Email из формы
-                        username: values.username  // Имя пользователя из формы
-                    }
+                     user: {  // Добавляем объект с данными пользователя
+                         id: response.user_id,      // ID из ответа сервера
+                         email: values.email,       // Email из формы
+                         username: values.username  // Имя пользователя из формы
+                     }
                 }
             }, "*");
 

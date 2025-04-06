@@ -1,3 +1,4 @@
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +7,7 @@ from app.database import async_session_maker
 from app.jwt_auth import get_current_admin
 from app.schemas import UpdateRoleRequest, ProjectsBase, UsersBase
 
-router = APIRouter(prefix="/projects", tags=["User Roles"])
+router = APIRouter(prefix='/api/projects', tags=['Project Users'])
 
 
 # Зависимость для получения асинхронной сессии БД
@@ -18,7 +19,7 @@ async def get_async_session() -> AsyncSession:
 # Эндпоинт для просмотра роли пользователя в рамках проекта
 @router.get("/{project_id}/users/{user_id}/role")
 async def get_user_role(
-        project_id: int,
+        project_id: UUID,
         user_id: int,
         session: AsyncSession = Depends(get_async_session),
         current_admin=Depends(get_current_admin)  # Добавляем проверку токена
@@ -63,7 +64,7 @@ async def get_user_role(
 # Эндпоинт для изменения роли пользователя
 @router.put("/{project_id}/users/{user_id}/role")
 async def update_user_role(
-        project_id: int,
+        project_id: UUID,
         user_id: int,
         request: UpdateRoleRequest,
         session: AsyncSession = Depends(get_async_session),

@@ -1,12 +1,13 @@
+import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Optional, List, Dict, Any
+from uuid import UUID
 
+from app.database import Base, int_pk, uuid_pk
 from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 from sqlalchemy import String, ForeignKey, Enum as SQLAlchemyEnum, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.database import Base, int_pk
 
 
 # Перечисление для OAuth провайдеров
@@ -42,7 +43,7 @@ class AdminsBase(Base):
 class ProjectsBase(Base):
     __tablename__ = "projects"
 
-    id: Mapped[int_pk] = mapped_column(primary_key=True)
+    id: Mapped[uuid_pk] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(String(255), nullable=False)
     owner_id: Mapped[int] = mapped_column(ForeignKey("admins.id"), nullable=False)
@@ -67,9 +68,8 @@ class UsersBase(Base):
     login: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     password: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # Nullable для OAuth
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
     role: Mapped[str] = mapped_column(String, nullable=False, default="user")
-    
 
     # OAuth поля
     oauth_provider: Mapped[Optional[str]] = mapped_column(SQLAlchemyEnum(OAuthProvider), nullable=True)
@@ -134,13 +134,15 @@ class LoginData(BaseModel):
         description="Пароль от 5 до 50 символов"
     )
 
+
 class AdminProfileResponse(BaseModel):
     login: str
     email: str
     user_role: str = "admin"
 
     class Config:
-        orm_mode = True
+        from_attributes = True
+
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -193,7 +195,7 @@ class ProjectUpdate(BaseModel):
 
 
 class ProjectOut(BaseModel):
-    id: int
+    id: UUID
     name: str
     description: str
     owner_id: int
@@ -205,7 +207,7 @@ class ProjectOut(BaseModel):
 
 
 class UserResponse(BaseModel):
-    id: int
+    id: UUID
     login: str
     email: str
     role: str
@@ -215,7 +217,7 @@ class UserResponse(BaseModel):
 
 
 class ProjectDetailResponse(BaseModel):
-    id: int
+    id: UUID
     name: str
     description: str
     owner_id: int
@@ -266,9 +268,11 @@ class UserCreate(BaseModel):
                 raise ValueError('Пароль должен содержать хотя бы один специальный символ')
         return v
 
+
 # Pydantic модель для тела запроса
 class UpdateRoleRequest(BaseModel):
     new_role: str
+
 
 class UserUpdate(BaseModel):
     login: Optional[str] = None

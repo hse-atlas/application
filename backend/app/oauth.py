@@ -1,5 +1,6 @@
 from urllib.parse import urlencode
 
+from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -12,7 +13,7 @@ from app.database import async_session_maker
 from app.jwt_auth import create_access_token, create_refresh_token
 from app.schemas import AdminsBase, UsersBase
 
-router = APIRouter(prefix="/oauth", tags=["OAuth Authentication"])
+router = APIRouter(prefix='/api/auth/oauth', tags=['OAuth Authentication'])
 
 # Конфигурация OAuth провайдеров
 OAUTH_PROVIDERS = get_oauth_config()
@@ -56,8 +57,11 @@ async def admin_oauth_login(provider: str, request: Request):
 
 # Начало OAuth процесса для пользователей проекта
 @router.get("/user/{provider}/{project_id}")
-async def user_oauth_login(provider: str, project_id: int, request: Request,
-                           session: AsyncSession = Depends(get_async_session)):
+async def user_oauth_login(
+        provider: str,
+        project_id: UUID,
+        request: Request,
+        session: AsyncSession = Depends(get_async_session)):
     if provider not in OAUTH_PROVIDERS:
         raise HTTPException(status_code=404, detail=f"OAuth provider {provider} not supported")
 

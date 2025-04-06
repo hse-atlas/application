@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Form, Input, Button, Typography, message } from "antd";
 import { useNavigate, useParams } from "react-router-dom";
-import { registerUser } from "../api"; // Импорт функции регистрации
+import { registerUser, isValidUUID } from "../api"; // Импортируем isValidUUID
 import "../styles/Register.css";
 
 const { Title, Text } = Typography;
@@ -16,6 +16,11 @@ const Register = () => {
     setLoading(true);
 
     try {
+      // Проверяем, что ID является валидным UUID
+      if (!isValidUUID(id)) {
+        throw new Error("Invalid project ID format");
+      }
+
       await registerUser(id, {
         login: values.username,
         email: values.email,

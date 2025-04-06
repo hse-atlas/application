@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { Modal, Form, Input, Button, Space, message } from "antd";
 import { useNavigate, useParams } from "react-router-dom";
-import { editeProject } from "../api"; // Импортируем ваш API-метод
+import { editeProject, isValidUUID } from "../api"; // Импортируем isValidUUID
 
 const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
   const [form] = Form.useForm();
@@ -16,6 +16,12 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
 
   const handleSave = async () => {
     try {
+      // Проверяем, что ID является валидным UUID
+      if (!isValidUUID(id)) {
+        message.error("Invalid project ID format");
+        return;
+      }
+
       const values = await form.validateFields();
 
       // Вызываем API-метод

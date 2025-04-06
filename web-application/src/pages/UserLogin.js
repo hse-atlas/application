@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Form, Input, Button, Typography, message } from "antd";
 import { useNavigate, useParams } from "react-router-dom";
-import { loginUser, getProjectRedirectUrl } from "../api";
+import { loginUser, getProjectRedirectUrl, isValidUUID } from "../api"; // Импортируем isValidUUID
 import "../styles/Login.css";
 
 const { Title, Text } = Typography;
@@ -15,6 +15,11 @@ const UserLogin = () => {
     setLoading(true);
 
     try {
+      // Проверяем, что ID является валидным UUID
+      if (!isValidUUID(id)) {
+        throw new Error("Invalid project ID format");
+      }
+
       // Выполняем вход пользователя
       const { access_token, refresh_token } = await loginUser(id, {
         email: values.email,

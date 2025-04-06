@@ -102,8 +102,8 @@ services:
       - --certificatesresolvers.letsencrypt.acme.email=${SSL_EMAIL}
       - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
       - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
-      - --api.dashboard=true # Включить веб-интерфейс
-      - --api.insecure=true # Разрешить HTTP-доступ (для теста)
+      - --api.dashboard=true  # Включить веб-интерфейс
+      - --api.insecure=true   # Разрешить HTTP-доступ (для теста)
 
     ports:
       - "80:80"

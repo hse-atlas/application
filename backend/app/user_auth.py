@@ -1,3 +1,4 @@
+from uuid import UUID
 from fastapi import APIRouter, HTTPException, status, Response, Depends, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -11,7 +12,7 @@ from app.security import verify_password, get_password_hash, password_meets_requ
 # Создаем лимитер для защиты от брутфорс-атак
 limiter = Limiter(key_func=get_remote_address)
 
-router = APIRouter(prefix="/api/v1/AuthService", tags=["Auth API"])
+router = APIRouter(prefix='/api/auth/user', tags=['User Auth'])
 
 
 async def get_async_session() -> AsyncSession:
@@ -20,11 +21,11 @@ async def get_async_session() -> AsyncSession:
 
 
 # Регистрация пользователя в рамках проекта
-@router.post("/user_register/{project_id}", status_code=status.HTTP_201_CREATED)
+@router.post("/register/{project_id}", status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/minute")
 async def user_register(
         request: Request,
-        project_id: int,
+        project_id: UUID,
         user_data: RegisterData,
         db: AsyncSession = Depends(get_async_session)
 ):
@@ -78,11 +79,11 @@ async def user_register(
 
 
 # Авторизация пользователя в рамках проекта
-@router.post("/user_login/{project_id}", response_model=TokenResponse)
+@router.post("/login/{project_id}", response_model=TokenResponse)
 @limiter.limit("10/minute")
 async def user_login(
         request: Request,
-        project_id: int,
+        project_id: UUID,
         user_data: LoginData,
         response: Response,
         db: AsyncSession = Depends(get_async_session)

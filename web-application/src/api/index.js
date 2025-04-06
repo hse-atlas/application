@@ -39,8 +39,8 @@ const refreshTokens = async () => {
       withCredentials: true
     });
 
-    // Запрос на обновление токенов
-    const response = await refreshApi.post("/api/v1/AuthService/api/v1/AuthService/refresh/", {
+    // Запрос на обновление токенов (ИЗМЕНЕН ПУТЬ)
+    const response = await refreshApi.post("/api/auth/refresh/", {
       refresh_token: refreshToken
     });
 
@@ -191,24 +191,30 @@ export const checkAndRefreshTokenIfNeeded = async () => {
   }
 };
 
+// Проверка на валидный UUID
+export const isValidUUID = (str) => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+};
+
 // Экспорт API функций
 
 export const register = async (credentials) => {
   return api.post(
-    "/api/v1/AuthService/api/v1/AuthService/register/",
+    "/api/auth/admin/register/",
     credentials
   );
 };
 
 export const login = async (credentials) => {
-  return api.post("/api/v1/AuthService/api/v1/AuthService/login/", credentials);
+  return api.post("/api/auth/admin/login/", credentials);
 };
 
 export const getProjects = async () => {
   try {
     // Проверяем и при необходимости обновляем токен перед запросом
     await checkAndRefreshTokenIfNeeded();
-    const response = await api.get("/projects/projects/owner");
+    const response = await api.get("/api/projects");
     return response;
   } catch (error) {
     throw error;
@@ -220,7 +226,7 @@ export const getMe = async () => {
     // Проверяем и при необходимости обновляем токен перед запросом
     await checkAndRefreshTokenIfNeeded();
     const response = await api.get(
-      "/api/v1/AuthService/api/v1/AuthService/me"
+      "/api/auth/admin/me"
     );
     return response;
   } catch (error) {
@@ -231,7 +237,7 @@ export const getMe = async () => {
 export const addProject = async (data) => {
   try {
     await checkAndRefreshTokenIfNeeded();
-    const response = await api.post("/projects/projects/", data);
+    const response = await api.post("/api/projects", data);
     return response;
   } catch (error) {
     throw error;
@@ -240,8 +246,13 @@ export const addProject = async (data) => {
 
 export const getProjectDetails = async (id) => {
   try {
+    // Проверяем, что ID является валидным UUID
+    if (!isValidUUID(id)) {
+      throw new Error("Invalid project ID format");
+    }
+
     await checkAndRefreshTokenIfNeeded();
-    const response = await api.get(`/projects/projects/${id}`);
+    const response = await api.get(`/api/projects/${id}`);
     return response;
   } catch (error) {
     throw error;
@@ -250,8 +261,13 @@ export const getProjectDetails = async (id) => {
 
 export const editeProject = async (id, data) => {
   try {
+    // Проверяем, что ID является валидным UUID
+    if (!isValidUUID(id)) {
+      throw new Error("Invalid project ID format");
+    }
+
     await checkAndRefreshTokenIfNeeded();
-    const response = await api.put(`/projects/projects/owner/${id}`, data);
+    const response = await api.put(`/api/projects/${id}`, data);
     return response;
   } catch (error) {
     throw error;
@@ -260,8 +276,13 @@ export const editeProject = async (id, data) => {
 
 export const deleteProject = async (id) => {
   try {
+    // Проверяем, что ID является валидным UUID
+    if (!isValidUUID(id)) {
+      throw new Error("Invalid project ID format");
+    }
+
     await checkAndRefreshTokenIfNeeded();
-    const response = await api.delete(`/projects/projects/owner/${id}`);
+    const response = await api.delete(`/api/projects/${id}`);
     return response;
   } catch (error) {
     throw error;
@@ -271,7 +292,7 @@ export const deleteProject = async (id) => {
 export const deleteUser = async (id) => {
   try {
     await checkAndRefreshTokenIfNeeded();
-    const response = await api.delete(`/users/users/${id}`);
+    const response = await api.delete(`/api/users/${id}`);
     return response;
   } catch (error) {
     throw error;
@@ -280,8 +301,13 @@ export const deleteUser = async (id) => {
 
 export const registerUser = async (project_id, data) => {
   try {
+    // Проверяем, что ID является валидным UUID
+    if (!isValidUUID(project_id)) {
+      throw new Error("Invalid project ID format");
+    }
+
     const response = await api.post(
-      `/api/v1/AuthService/api/v1/AuthService/user_register/${project_id}`,
+      `/api/auth/user/register/${project_id}`,
       data
     );
     return response;
@@ -292,8 +318,13 @@ export const registerUser = async (project_id, data) => {
 
 export const loginUser = async (project_id, data) => {
   try {
+    // Проверяем, что ID является валидным UUID
+    if (!isValidUUID(project_id)) {
+      throw new Error("Invalid project ID format");
+    }
+
     const response = await api.post(
-      `/api/v1/AuthService/api/v1/AuthService/user_login/${project_id}`,
+      `/api/auth/user/login/${project_id}`,
       data
     );
     return response.data;
@@ -305,7 +336,12 @@ export const loginUser = async (project_id, data) => {
 
 export const getProjectRedirectUrl = async (project_id) => {
   try {
-    const response = await api.get(`/projects/projects/getURL/${project_id}`);
+    // Проверяем, что ID является валидным UUID
+    if (!isValidUUID(project_id)) {
+      throw new Error("Invalid project ID format");
+    }
+
+    const response = await api.get(`/api/projects/${project_id}/url`);
     return response.data;
   } catch (error) {
     const errorMessage =
@@ -316,11 +352,76 @@ export const getProjectRedirectUrl = async (project_id) => {
 
 export const changeUserRole = async (project_id, user_id, new_role) => {
   try {
+    // Проверяем, что project_id является валидным UUID
+    if (!isValidUUID(project_id)) {
+      throw new Error("Invalid project ID format");
+    }
+
     await checkAndRefreshTokenIfNeeded();
     const response = await api.put(
-      `/projects/${project_id}/users/${user_id}/role`,
+      `/api/projects/${project_id}/users/${user_id}/role`,
       { new_role }
     );
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getProjectUsers = async (project_id) => {
+  try {
+    // Проверяем, что ID является валидным UUID
+    if (!isValidUUID(project_id)) {
+      throw new Error("Invalid project ID format");
+    }
+
+    await checkAndRefreshTokenIfNeeded();
+    const response = await api.get(`/api/projects/${project_id}/users`);
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getProjectUser = async (project_id, user_id) => {
+  try {
+    // Проверяем, что ID является валидным UUID
+    if (!isValidUUID(project_id)) {
+      throw new Error("Invalid project ID format");
+    }
+
+    await checkAndRefreshTokenIfNeeded();
+    const response = await api.get(`/api/projects/${project_id}/users/${user_id}`);
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const deleteProjectUser = async (project_id, user_id) => {
+  try {
+    // Проверяем, что ID является валидным UUID
+    if (!isValidUUID(project_id)) {
+      throw new Error("Invalid project ID format");
+    }
+
+    await checkAndRefreshTokenIfNeeded();
+    const response = await api.delete(`/api/projects/${project_id}/users/${user_id}`);
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const updateProjectOAuth = async (project_id, oauth_settings) => {
+  try {
+    // Проверяем, что ID является валидным UUID
+    if (!isValidUUID(project_id)) {
+      throw new Error("Invalid project ID format");
+    }
+
+    await checkAndRefreshTokenIfNeeded();
+    const response = await api.put(`/api/projects/${project_id}/oauth`, oauth_settings);
     return response;
   } catch (error) {
     throw error;

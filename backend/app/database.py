@@ -1,8 +1,10 @@
+import uuid
+from uuid import UUID
 import logging
 from datetime import datetime
 from typing import Annotated, Dict, Any, Optional
 
-from sqlalchemy import func, JSON
+from sqlalchemy import func, JSON, String
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncAttrs
 from sqlalchemy.future import select
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -16,6 +18,7 @@ DATABASE_URL = get_pass_db_url()
 engine = create_async_engine(DATABASE_URL)
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
+uuid_pk = Annotated[UUID, mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))]
 int_pk = Annotated[int, mapped_column(primary_key=True)]
 created_at = Annotated[datetime, mapped_column(server_default=func.now())]
 updated_at = Annotated[datetime, mapped_column(server_default=func.now(), onupdate=datetime.now)]

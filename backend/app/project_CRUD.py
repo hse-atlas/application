@@ -1,3 +1,4 @@
+from uuid import UUID
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy import func, select
@@ -16,7 +17,7 @@ from app.schemas import (
     ProjectOAuthSettings,
 )
 
-router = APIRouter(prefix="/projects", tags=["Projects CRUD"])
+router = APIRouter(prefix='/api/projects', tags=['Projects'])
 
 
 async def get_async_session() -> AsyncSession:
@@ -59,9 +60,9 @@ async def create_project(
     )
 
 
-@router.put("/owner/{project_id}", response_model=ProjectOut)
+@router.put("/{project_id}", response_model=ProjectOut)
 async def update_project(
-        project_id: int,
+        project_id: UUID,
         project: ProjectUpdate,
         session: AsyncSession = Depends(get_async_session),
         current_admin=Depends(get_current_admin),
@@ -111,9 +112,9 @@ async def update_project(
     )
 
 
-@router.delete("/owner/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project(
-        project_id: int,
+        project_id: UUID,
         session: AsyncSession = Depends(get_async_session),
         current_admin=Depends(get_current_admin),
 ):
@@ -137,7 +138,7 @@ async def delete_project(
     return  # 204 No Content
 
 
-@router.get("/owner", response_model=List[ProjectOut])
+@router.get("/", response_model=List[ProjectOut])
 async def list_admin_projects(
         session: AsyncSession = Depends(get_async_session),
         current_admin=Depends(get_current_admin),
@@ -181,7 +182,7 @@ async def list_admin_projects(
 
 @router.get("/{project_id}", response_model=ProjectDetailResponse)
 async def get_project_details(
-        project_id: int,
+        project_id: UUID,
         session: AsyncSession = Depends(get_async_session),
         current_admin=Depends(get_current_admin),
 ):
@@ -256,7 +257,7 @@ async def get_project_details(
     )
 
 
-@router.get("/getURL/{project_id}", response_model=str)
+@router.get("/{project_id}/url", response_model=str)
 async def get_project_url(
         project_id: int,
         session: AsyncSession = Depends(get_async_session),

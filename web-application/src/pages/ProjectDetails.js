@@ -27,7 +27,8 @@ import {
   deleteProject,
   deleteUser,
   changeUserRole,
-} from "../api"; // Импортируем changeUserRole
+  isValidUUID,
+} from "../api"; // Импортируем isValidUUID
 import { useSelector } from "react-redux";
 
 const { Title, Text, Link } = Typography;
@@ -48,6 +49,13 @@ const ProjectDetails = () => {
   useEffect(() => {
     const fetchProjectDetails = async () => {
       try {
+        // Проверяем, что ID является валидным UUID
+        if (!isValidUUID(id)) {
+          setError("Invalid project ID format");
+          setLoading(false);
+          return;
+        }
+
         const response = await getProjectDetails(id);
         setProject(response.data);
         setUsers(response.data.users);
@@ -72,6 +80,12 @@ const ProjectDetails = () => {
 
   const handleDelete = async () => {
     try {
+      // Проверяем, что ID является валидным UUID
+      if (!isValidUUID(id)) {
+        message.error("Invalid project ID format");
+        return;
+      }
+
       await deleteProject(id);
       message.success("Project deleted successfully");
       navigate("/");
@@ -101,18 +115,23 @@ const ProjectDetails = () => {
 
   const handleRoleChange = async (userId, newRole) => {
     try {
-      // Преобразуем project_id и user_id в числа
-      const projectId = parseInt(id, 10);
+      // Проверяем, что ID является валидным UUID
+      if (!isValidUUID(id)) {
+        message.error("Invalid project ID format");
+        return;
+      }
+
+      // Преобразуем user_id в число
       const userIdNumber = parseInt(userId, 10);
 
       console.log("Sending data to server:", {
-        project_id: projectId,
+        project_id: id,
         user_id: userIdNumber,
-        new_role: newRole, // Используем правильное имя поля
+        new_role: newRole,
       });
 
       // Отправляем запрос на сервер
-      await changeUserRole(projectId, userIdNumber, newRole);
+      await changeUserRole(id, userIdNumber, newRole);
 
       // Обновляем состояние users
       setUsers((prev) =>
@@ -189,16 +208,6 @@ const ProjectDetails = () => {
       align: "center",
     },
   ];
-
-  {/*  // Функция для определения цвета тега в зависимости от роли
-  const getRoleColor = (role) => {
-    switch (role.toLowerCase()) {
-      case "admin":
-        return "volcano";
-      default:
-        return "green";
-    }
-  };*/}
 
   if (loading) return <Spin size="large" fullscreen />;
   if (error) return <Alert message={error} type="error" showIcon fullscreen />;

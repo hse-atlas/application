@@ -1,5 +1,7 @@
 import logging
 import os
+import uuid
+from uuid import UUID
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from enum import Enum
@@ -60,7 +62,7 @@ class AdminsBase(Base):
 class ProjectsBase(Base):
     __tablename__ = "projects"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[UUID] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(String(255), nullable=False)
     owner_id: Mapped[int] = mapped_column(ForeignKey("admins.id"), nullable=False)
@@ -90,7 +92,7 @@ class UsersBase(Base):
     login: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     password: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # Nullable для OAuth
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    project_id: Mapped[UUID] = mapped_column(String(36), ForeignKey("projects.id"), nullable=False)
     role: Mapped[str] = mapped_column(String, nullable=False, default="user") #новый столбец роли
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now(),
