@@ -2,7 +2,7 @@ import axios from "axios";
 
 // Создаем экземпляр axios с базовым URL
 const api = axios.create({
-  baseURL: "",
+  baseURL: window.location.origin,
   withCredentials: true // Важно для работы с cookie
 });
 
