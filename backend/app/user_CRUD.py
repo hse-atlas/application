@@ -1,12 +1,12 @@
 from uuid import UUID
+from sqlalchemy import select, cast, String
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.database import async_session_maker
 from app.jwt_auth import get_current_admin
 from app.schemas import UsersBase, ProjectsBase, UserOut, UsersProjectOut, UserUpdate
 from app.security import get_password_hash, password_meets_requirements
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix='/api/users', tags=['Users CRUD'])
 
@@ -34,7 +34,7 @@ async def get_user(
     # Проверяем, владеет ли текущий админ проектом, к которому принадлежит пользователь
     project_result = await session.execute(
         select(ProjectsBase).where(
-            ProjectsBase.id == db_user.project_id,
+            cast(ProjectsBase.id, String) == str(db_user.project_id),
             ProjectsBase.owner_id == current_admin.id
         )
     )
@@ -70,7 +70,7 @@ async def update_user(
     # Проверяем, владеет ли текущий админ проектом, к которому принадлежит пользователь
     project_result = await session.execute(
         select(ProjectsBase).where(
-            ProjectsBase.id == db_user.project_id,
+            cast(ProjectsBase.id, String) == str(db_user.project_id),
             ProjectsBase.owner_id == current_admin.id
         )
     )
@@ -121,7 +121,7 @@ async def delete_user(
     # Проверяем, владеет ли текущий админ проектом, к которому принадлежит пользователь
     project_result = await session.execute(
         select(ProjectsBase).where(
-            ProjectsBase.id == db_user.project_id,
+            cast(ProjectsBase.id, String) == str(db_user.project_id),
             ProjectsBase.owner_id == current_admin.id
         )
     )
@@ -150,7 +150,7 @@ async def get_users_by_project(
     # Проверяем, владеет ли текущий админ данным проектом
     result_project = await session.execute(
         select(ProjectsBase).where(
-            ProjectsBase.id == project_id,
+            cast(ProjectsBase.id, String) == str(project_id),
             ProjectsBase.owner_id == current_admin.id
         )
     )
@@ -162,7 +162,11 @@ async def get_users_by_project(
             detail="У вас нет прав для просмотра этого проекта или проект не существует"
         )
 
-    result_users = await session.execute(select(UsersBase).where(UsersBase.project_id == project_id))
+    result_users = await session.execute(
+        select(UsersBase).where(
+            cast(UsersBase.project_id, String) == str(project_id)
+        )
+    )
     users = result_users.scalars().all()
 
     return UsersProjectOut(

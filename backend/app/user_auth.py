@@ -3,10 +3,12 @@ from fastapi import APIRouter, HTTPException, status, Response, Depends, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import cast, String
+from sqlalchemy.future import select
 
 from app.database import async_session_maker
 from app.jwt_auth import create_access_token, create_refresh_token
-from app.schemas import RegisterData, LoginData, TokenResponse
+from app.schemas import RegisterData, LoginData, TokenResponse, ProjectsBase
 from app.security import verify_password, get_password_hash, password_meets_requirements
 
 # Создаем лимитер для защиты от брутфорс-атак
@@ -30,10 +32,11 @@ async def user_register(
         db: AsyncSession = Depends(get_async_session)
 ):
     # Проверка существования проекта
-    from app.schemas import ProjectsBase
-    from sqlalchemy.future import select
-
-    project_result = await db.execute(select(ProjectsBase).where(ProjectsBase.id == project_id))
+    project_result = await db.execute(
+        select(ProjectsBase).where(
+            cast(ProjectsBase.id, String) == str(project_id)
+        )
+    )
     project = project_result.scalar_one_or_none()
 
     if not project:
@@ -44,7 +47,7 @@ async def user_register(
 
     # Проверка email
     from app.core import find_one_or_none_user
-    existing_user_email = await find_one_or_none_user(email=user_data.email, project_id=project_id)
+    existing_user_email = await find_one_or_none_user(email=user_data.email, project_id=str(project_id))
     if existing_user_email:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -52,7 +55,7 @@ async def user_register(
         )
 
     # Проверка логина
-    existing_user_login = await find_one_or_none_user(login=user_data.login, project_id=project_id)
+    existing_user_login = await find_one_or_none_user(login=user_data.login, project_id=str(project_id))
     if existing_user_login:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -70,7 +73,7 @@ async def user_register(
     # Хеширование пароля и добавление пользователя
     user_dict = user_data.dict()
     user_dict['password'] = get_password_hash(user_data.password)
-    user_dict['project_id'] = project_id
+    user_dict['project_id'] = str(project_id)
 
     from app.core import add_user
     new_user = await add_user(**user_dict)
@@ -89,13 +92,12 @@ async def user_login(
         db: AsyncSession = Depends(get_async_session)
 ):
     # Поиск пользователя по email и project_id
-    from sqlalchemy.future import select
     from app.schemas import UsersBase
 
     result = await db.execute(
         select(UsersBase).where(
             UsersBase.email == user_data.email,
-            UsersBase.project_id == project_id
+            cast(UsersBase.project_id, String) == str(project_id)
         )
     )
     user = result.scalar_one_or_none()

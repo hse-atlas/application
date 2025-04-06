@@ -1,6 +1,6 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.future import select
+from sqlalchemy import select, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_maker
@@ -31,7 +31,7 @@ async def get_user_role(
     # Проверка, что администратор имеет доступ к этому проекту
     project_result = await session.execute(
         select(ProjectsBase).where(
-            ProjectsBase.id == project_id,
+            cast(ProjectsBase.id, String) == str(project_id),
             ProjectsBase.owner_id == current_admin.id
         )
     )
@@ -47,7 +47,7 @@ async def get_user_role(
     result = await session.execute(
         select(UsersBase).where(
             UsersBase.id == user_id,
-            UsersBase.project_id == project_id
+            cast(UsersBase.project_id, String) == str(project_id)
         )
     )
     user = result.scalar_one_or_none()
@@ -87,7 +87,7 @@ async def update_user_role(
     # Проверка, что администратор имеет доступ к этому проекту
     project_result = await session.execute(
         select(ProjectsBase).where(
-            ProjectsBase.id == project_id,
+            cast(ProjectsBase.id, String) == str(project_id),
             ProjectsBase.owner_id == current_admin.id
         )
     )
@@ -103,7 +103,7 @@ async def update_user_role(
     result = await session.execute(
         select(UsersBase).where(
             UsersBase.id == user_id,
-            UsersBase.project_id == project_id
+            cast(UsersBase.project_id, String) == str(project_id)
         )
     )
     user = result.scalar_one_or_none()
