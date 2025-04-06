@@ -90,6 +90,11 @@ services:
       - ./backend/logs:/app/logs
     networks:
       - atlas_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`atlas.appweb.space`) && (PathPrefix(`/api`) || PathPrefix(`/projects`))"
+      - "traefik.http.routers.backend.entrypoints=websecure"
+      - "traefik.http.routers.backend.tls.certresolver=letsencrypt"
 
   traefik:
     image: traefik:v2.10
