@@ -71,7 +71,9 @@ async def update_project(
     Обновляет проект.
     """
     result = await session.execute(
-        select(ProjectsBase).where(ProjectsBase.id == project_id)
+        select(ProjectsBase).where(
+            cast(ProjectsBase.id, String) == str(project_id)
+        )
     )
     db_project = result.scalar_one_or_none()
     if not db_project:
@@ -82,6 +84,7 @@ async def update_project(
             status_code=403, detail="Нет прав для изменения этого проекта"
         )
 
+    # Обновление полей проекта
     if project.name is not None:
         db_project.name = project.name
     if project.description is not None:
@@ -96,8 +99,11 @@ async def update_project(
     await session.commit()
     await session.refresh(db_project)
 
+    # Подсчет количества пользователей
     result_count = await session.execute(
-        select(func.count(UsersBase.id)).where(UsersBase.project_id == db_project.id)
+        select(func.count(UsersBase.id)).where(
+            cast(UsersBase.project_id, String) == str(db_project.id)
+        )
     )
     user_count = result_count.scalar() or 0
 
@@ -122,8 +128,11 @@ async def delete_project(
     Удаляет проект, если запрос исходит от его владельца.
     """
     result = await session.execute(
-        select(ProjectsBase).where(ProjectsBase.id == project_id)
+        select(ProjectsBase).where(
+            cast(ProjectsBase.id, String) == str(project_id)
+        )
     )
+
     db_project = result.scalar_one_or_none()
     if not db_project:
         raise HTTPException(status_code=404, detail="Проект не найден")
