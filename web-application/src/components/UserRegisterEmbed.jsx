@@ -11,7 +11,6 @@ const UserRegisterEmbed = () => {
     const onFinish = async (values) => {
         setLoading(true);
         try {
-            // Проверяем, что ID является валидным UUID
             if (!isValidUUID(projectId)) {
                 throw new Error("Invalid project ID format");
             }
@@ -22,22 +21,26 @@ const UserRegisterEmbed = () => {
                 password: values.password,
             });
 
-            // Предполагаем, что response содержит user_id (как в вашем примере)
+            console.log('Server response:', response); // Добавьте для отладки
+
+            // Проверяем наличие user_id в ответе (с учетом возможных вариантов именования)
+            const userId = response.user_id || response.userId || response.id;
+            if (!userId) {
+                throw new Error("User ID not found in server response");
+            }
+
             window.parent.postMessage({
-                type: "ATLAS_AUTH_SUCCESS",
-                tokens: {
-                    access_token: response.access_token,
-                    refresh_token: response.refresh_token,
-                     user: {  // Добавляем объект с данными пользователя
-                         id: response.user_id,      // ID из ответа сервера
-                         email: values.email,       // Email из формы
-                         username: values.username  // Имя пользователя из формы
-                     }
+                type: "ATLAS_REGISTER_SUCCESS",
+                user: {
+                    id: userId,  // Используем извлеченный ID
+                    email: values.email,
+                    username: values.username
                 }
             }, "*");
 
         } catch (error) {
-            // Обработка ошибок
+            console.error('Registration error:', error);
+            message.error(error.message || "Registration failed");
         } finally {
             setLoading(false);
         }

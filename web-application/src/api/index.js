@@ -310,7 +310,7 @@ export const registerUser = async (project_id, data) => {
       `/api/auth/user/register/${project_id}`,
       data
     );
-    return response;
+    return response.data;
   } catch (error) {
     throw error;
   }
