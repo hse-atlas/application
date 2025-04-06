@@ -214,7 +214,7 @@ export const getProjects = async () => {
   try {
     // Проверяем и при необходимости обновляем токен перед запросом
     await checkAndRefreshTokenIfNeeded();
-    const response = await api.get("/api/projects");
+    const response = await api.get("/api/projects/");
     return response;
   } catch (error) {
     throw error;
@@ -237,7 +237,7 @@ export const getMe = async () => {
 export const addProject = async (data) => {
   try {
     await checkAndRefreshTokenIfNeeded();
-    const response = await api.post("/api/projects", data);
+    const response = await api.post("/api/projects/", data);
     return response;
   } catch (error) {
     throw error;
@@ -426,4 +426,3 @@ export const updateProjectOAuth = async (project_id, oauth_settings) => {
   } catch (error) {
     throw error;
   }
-};
