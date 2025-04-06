@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Form, Input, Button, Typography, message } from "antd";
+import { Form, Input, Button, Typography, message, Divider } from "antd";
+import { GoogleOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import { register } from "../api";
 import "../styles/Register.css";
@@ -40,6 +41,11 @@ const Register = () => {
 
       setLoading(false);
     }
+  };
+
+  // Добавляем функцию для входа через Google
+  const handleGoogleLogin = () => {
+    window.location.href = "/api/auth/oauth/admin/google";
   };
 
   return (
@@ -113,6 +119,18 @@ const Register = () => {
               </Button>
             </Form.Item>
           </Form>
+
+          {/* Добавляем разделитель и кнопку для регистрации через Google */}
+          <Divider>or</Divider>
+
+          <Button
+            icon={<GoogleOutlined />}
+            onClick={handleGoogleLogin}
+            block
+            style={{ marginBottom: '16px' }}
+          >
+            Sign up with Google
+          </Button>
 
           <div className="login-link">
             <Text>

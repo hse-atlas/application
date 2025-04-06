@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { Form, Input, Button, Typography, message } from "antd";
+import { Form, Input, Button, Typography, message, Divider, Space } from "antd";
 import { useNavigate } from "react-router-dom";
+import { GoogleOutlined } from "@ant-design/icons"; // Импортируем иконку Google
 import { login } from "../api";
 import tokenRefreshService from "../services/tokenRefreshService";
 import "../styles/Login.css";
@@ -49,7 +50,12 @@ const Login = () => {
     }
   };
 
-return (
+  // Добавляем функцию для входа через Google
+  const handleGoogleLogin = () => {
+    window.location.href = "/api/auth/oauth/admin/google";
+  };
+
+  return (
     <div className="login-page-container">
       <div className="login-container">
         <Title level={2}>Welcome</Title>
@@ -90,6 +96,18 @@ return (
               </Button>
             </Form.Item>
           </Form>
+
+          {/* Добавляем разделитель и кнопку для входа через Google */}
+          <Divider>or</Divider>
+
+          <Button
+            icon={<GoogleOutlined />}
+            onClick={handleGoogleLogin}
+            block
+            style={{ marginBottom: '16px' }}
+          >
+            Continue with Google
+          </Button>
 
           <div className="register-link">
             <Text>
