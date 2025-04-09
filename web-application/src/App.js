@@ -6,9 +6,6 @@ import Register from "./pages/Register";
 import Main from "./pages/Main";
 import ProfileSettings from "./pages/ProfileSettings";
 import Profile from "./pages/Profile";
-import ProjectDetails from "./pages/ProjectDetails";
-import UserRegister from "./pages/UserRegister";
-import UserLogin from "./pages/UserLogin";
 import UserLoginEmbed from "./components/UserLoginEmbed";
 import UserRegisterEmbed from "./components/UserRegisterEmbed";
 import tokenRefreshService from "./services/tokenRefreshService";
@@ -36,8 +33,6 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/settings" element={<ProfileSettings />} />
-        <Route path="/userRegister/:id" element={<UserRegister />} />
-        <Route path="/userLogin/:id" element={<UserLogin />} />
         <Route path="/embed/login/:id" element={<UserLoginEmbed />} />
         <Route path="/embed/register/:id" element={<UserRegisterEmbed />} />
       </Routes>

@@ -44,8 +44,6 @@ const ProjectDetails = () => {
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const user = useSelector((state) => state.user.data);
 
-  const inviteLink = `${window.location.origin}/userRegister/${id}`;
-
   useEffect(() => {
     const fetchProjectDetails = async () => {
       try {
@@ -94,12 +92,12 @@ const ProjectDetails = () => {
     }
   };
 
-  const handleCopyLink = async () => {
+  const handleCopyUUID = async () => {
     try {
-      await navigator.clipboard.writeText(inviteLink);
-      message.success("Link copied to clipboard!");
+      await navigator.clipboard.writeText(id);
+      message.success("UUID copied to clipboard!");
     } catch (err) {
-      message.error("Failed to copy link");
+      message.error("Failed to copy UUID");
     }
   };
 
@@ -237,8 +235,8 @@ const ProjectDetails = () => {
         <Divider />
 
         <Flex justify="space-between" align="center">
-          <Link onClick={handleCopyLink} style={{ cursor: "pointer" }}>
-            Invite Users to this Project
+          <Link onClick={handleCopyUUID} style={{ cursor: "pointer" }}>
+            Copy UUID for integration forms
           </Link>
 
           <Space>
