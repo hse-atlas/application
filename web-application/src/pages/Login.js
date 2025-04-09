@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Form, Input, Button, Typography, message, Divider, Space } from "antd";
 import { useNavigate } from "react-router-dom";
-import { GoogleOutlined } from "@ant-design/icons"; // Импортируем иконку Google
+import { GoogleOutlined } from "@ant-design/icons";
 import { login } from "../api";
 import tokenRefreshService from "../services/tokenRefreshService";
 import "../styles/Login.css";
@@ -15,7 +15,6 @@ const Login = () => {
   const onFinish = async (values) => {
     setLoading(true);
     try {
-      // Отправка запроса к бэкенду для получения токенов
       const response = await login({
         email: values.email,
         password: values.password,
@@ -23,34 +22,42 @@ const Login = () => {
 
       const { access_token, refresh_token } = response.data;
 
-      // Сохранение токенов в localStorage
       localStorage.setItem("access_token", access_token);
       localStorage.setItem("refresh_token", refresh_token);
 
-      // Запускаем сервис автоматического обновления токенов
       tokenRefreshService.start();
 
-      // Сообщение об успешном входе
       message.success("Login successful!");
 
-      // Перенаправление на главную страницу
       setTimeout(() => {
         setLoading(false);
         navigate("/");
       }, 1000);
     } catch (error) {
-      // Обработка ошибок
-      const errorMessage = error.response?.data?.detail || "An error occurred";
+      let errorMessage = "An error occurred during login";
+
+      // Проверяем наличие ответа от сервера
+      if (error.response) {
+        // Если бэкенд вернул детали ошибки в поле detail
+        if (error.response.data && error.response.data.detail) {
+          errorMessage = error.response.data.detail;
+        }
+        // Если бэкенд вернул другую структуру ошибки
+        else if (error.response.data) {
+          errorMessage = JSON.stringify(error.response.data);
+        }
+      } else if (error.request) {
+        errorMessage = "No response from server";
+      } else {
+        errorMessage = error.message;
+      }
+
       console.error("Login error:", errorMessage);
-
-      // Отображаем ошибку с помощью message из antd
       message.error(errorMessage);
-
       setLoading(false);
     }
   };
 
-  // Добавляем функцию для входа через Google
   const handleGoogleLogin = () => {
     window.location.href = "/api/auth/oauth/admin/google";
   };
@@ -97,7 +104,6 @@ const Login = () => {
             </Form.Item>
           </Form>
 
-          {/* Добавляем разделитель и кнопку для входа через Google */}
           <Divider>or</Divider>
 
           <Button

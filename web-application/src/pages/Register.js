@@ -10,40 +10,55 @@ const { Title, Text } = Typography;
 const Register = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const [errorMessage, setErrorMessage] = useState(""); // создаем состояние для ошибки
+  const [form] = Form.useForm();
 
   const onFinish = async (values) => {
     setLoading(true);
     try {
-      // Отправляем данные на сервер
       const response = await register({
         login: values.username,
         email: values.email,
         password: values.password,
       });
 
+      message.success(response.data.message || "Registration successful!");
       console.log("Registration successful:", response.data);
-      // Временное перенаправление на страницу входа после успешной регистрации
+
+      // Очищаем форму после успешной регистрации
+      form.resetFields();
+
+      // Перенаправление на страницу входа с небольшой задержкой
       setTimeout(() => {
-        setLoading(false);
-        navigate("/login"); // Перенаправление на страницу входа
-      }, 1000);
+        navigate("/login");
+      }, 1500);
     } catch (error) {
-      // Проверяем наличие сообщения об ошибке
-      const errorMessage = error.response?.data?.detail || "An error occurred";
+      let errorMessage = "Registration failed. Please try again.";
+
+      // Обрабатываем различные типы ошибок
+      if (error.response) {
+        // Ошибки от сервера
+        if (error.response.status === 409) {
+          // Конфликты (уже существующий email или логин)
+          errorMessage = error.response.data.detail;
+        } else if (error.response.status === 400) {
+          // Ошибки валидации (например, пароль не соответствует требованиям)
+          errorMessage = error.response.data.detail;
+        } else {
+          // Другие ошибки сервера
+          errorMessage = error.response.data.detail || error.response.statusText;
+        }
+      } else if (error.request) {
+        // Ошибки сети (нет ответа от сервера)
+        errorMessage = "Network error. Please check your connection.";
+      }
+
       console.error("Registration error:", errorMessage);
-
-      // Устанавливаем ошибку в состояние для отображения на фронте
-      setErrorMessage(errorMessage); // Например, у вас может быть состояние для ошибки
-
-      // Отображаем сообщение об ошибке
-      message.error(errorMessage); // Показываем всплывающее сообщение с ошибкой
-
+      message.error(errorMessage);
+    } finally {
       setLoading(false);
     }
   };
 
-  // Добавляем функцию для входа через Google
   const handleGoogleLogin = () => {
     window.location.href = "/api/auth/oauth/admin/google";
   };
@@ -54,6 +69,7 @@ const Register = () => {
         <Title level={2}>Create an Account</Title>
         <div className="form-container">
           <Form
+            form={form}
             name="register"
             layout="vertical"
             onFinish={onFinish}
@@ -63,7 +79,18 @@ const Register = () => {
               name="username"
               label="Username"
               rules={[
-                { required: true, message: "Please enter your username!" },
+                {
+                  required: true,
+                  message: "Please enter your username!"
+                },
+                {
+                  min: 3,
+                  message: "Username must be at least 3 characters long",
+                },
+                {
+                  max: 20,
+                  message: "Username must be at most 20 characters long",
+                },
               ]}
             >
               <Input placeholder="Enter your username" />
@@ -73,7 +100,10 @@ const Register = () => {
               name="email"
               label="Email"
               rules={[
-                { required: true, message: "Please enter your email!" },
+                {
+                  required: true,
+                  message: "Please enter your email!"
+                },
                 {
                   type: "email",
                   message: "Please enter a valid email address!",
@@ -87,8 +117,16 @@ const Register = () => {
               name="password"
               label="Password"
               rules={[
-                { required: true, message: "Please enter your password!" },
+                {
+                  required: true,
+                  message: "Please enter your password!"
+                },
+                {
+                  min: 8,
+                  message: "Password must be at least 8 characters long",
+                },
               ]}
+              help="Password must be at least 8 characters long"
             >
               <Input.Password placeholder="Enter your password" />
             </Form.Item>
@@ -99,7 +137,10 @@ const Register = () => {
               dependencies={["password"]}
               hasFeedback
               rules={[
-                { required: true, message: "Please confirm your password!" },
+                {
+                  required: true,
+                  message: "Please confirm your password!"
+                },
                 ({ getFieldValue }) => ({
                   validator(_, value) {
                     if (!value || getFieldValue("password") === value) {
@@ -114,13 +155,18 @@ const Register = () => {
             </Form.Item>
 
             <Form.Item>
-              <Button type="primary" htmlType="submit" block loading={loading}>
+              <Button
+                type="primary"
+                htmlType="submit"
+                block
+                loading={loading}
+                disabled={loading}
+              >
                 Register
               </Button>
             </Form.Item>
           </Form>
 
-          {/* Добавляем разделитель и кнопку для регистрации через Google */}
           <Divider>or</Divider>
 
           <Button
