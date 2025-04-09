@@ -6,6 +6,7 @@ import Register from "./pages/Register";
 import Main from "./pages/Main";
 import ProfileSettings from "./pages/ProfileSettings";
 import Profile from "./pages/Profile";
+import ProjectDetails from "./pages/ProjectDetails";
 import UserLoginEmbed from "./components/UserLoginEmbed";
 import UserRegisterEmbed from "./components/UserRegisterEmbed";
 import tokenRefreshService from "./services/tokenRefreshService";
