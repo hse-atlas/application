@@ -146,8 +146,12 @@ const Register = () => {
                   min: 8,
                   message: "Password must be at least 8 characters long",
                 },
+                {
+                  pattern: /[0-9]/,
+                  message: "Password must contain at least one number",
+                },
               ]}
-              help="Password must be at least 8 characters long"
+              help="Password must be at least 8 characters long and contain at least one number"
             >
               <Input.Password placeholder="Enter your password" />
             </Form.Item>

@@ -11,6 +11,7 @@ const { Title, Text } = Typography;
 const Login = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const [form] = Form.useForm();
 
   const onFinish = async (values) => {
     setLoading(true);
@@ -36,24 +37,58 @@ const Login = () => {
     } catch (error) {
       let errorMessage = "An error occurred during login";
 
-      // Проверяем наличие ответа от сервера
+      // Обрабатываем различные типы ошибок
       if (error.response) {
-        // Если бэкенд вернул детали ошибки в поле detail
-        if (error.response.data && error.response.data.detail) {
-          errorMessage = error.response.data.detail;
+        // Ошибки валидации Pydantic (422 Unprocessable Entity)
+        if (error.response.status === 422) {
+          const errors = error.response.data.detail;
+          if (Array.isArray(errors)) {
+            // Обрабатываем все ошибки валидации
+            errors.forEach((err) => {
+              if (err.loc && err.loc.includes("email") && err.msg) {
+                // Специальная обработка ошибки email
+                message.error(err.msg);
+                form.setFields([{
+                  name: 'email',
+                  errors: [err.msg],
+                }]);
+              } else if (err.loc && err.loc.includes("password") && err.msg) {
+                // Обработка ошибки пароля
+                message.error(err.msg);
+                form.setFields([{
+                  name: 'password',
+                  errors: [err.msg],
+                }]);
+              } else if (err.msg) {
+                // Общие ошибки валидации
+                message.error(err.msg);
+              }
+            });
+            setLoading(false);
+            return;
+          }
         }
-        // Если бэкенд вернул другую структуру ошибки
-        else if (error.response.data) {
-          errorMessage = JSON.stringify(error.response.data);
+        // Ошибки аутентификации (401 Unauthorized)
+        else if (error.response.status === 401) {
+          errorMessage = error.response.data.detail || "Invalid email or password";
+          message.error(errorMessage);
+        }
+        // Другие ошибки сервера
+        else {
+          errorMessage = error.response.data.detail || error.response.statusText;
+          message.error(errorMessage);
         }
       } else if (error.request) {
-        errorMessage = "No response from server";
+        // Ошибки сети (нет ответа от сервера)
+        errorMessage = "No response from server. Please check your connection.";
+        message.error(errorMessage);
       } else {
+        // Другие ошибки
         errorMessage = error.message;
+        message.error(errorMessage);
       }
 
       console.error("Login error:", errorMessage);
-      message.error(errorMessage);
       setLoading(false);
     }
   };
@@ -68,6 +103,7 @@ const Login = () => {
         <Title level={2}>Welcome</Title>
         <div className="form-container">
           <Form
+            form={form}
             name="login"
             layout="vertical"
             onFinish={onFinish}
@@ -82,6 +118,10 @@ const Login = () => {
                   required: true,
                   message: "Please enter your email!",
                 },
+                {
+                  type: 'email',
+                  message: 'Please enter a valid email address!',
+                }
               ]}
             >
               <Input placeholder="Enter your email" />
