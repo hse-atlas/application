@@ -99,7 +99,7 @@ def get_oauth_config():
             "token_url": "https://oauth2.googleapis.com/token",
             "userinfo_url": "https://www.googleapis.com/oauth2/v3/userinfo",
             "scope": "email profile",
-            "redirect_uri": f"{base_url}/api/auth/oauth/google/callback"
+            "redirect_uri": f"{config.BASE_URL}/api/auth/oauth/google/callback"
         },
         "github": {
             "client_id": config.OAUTH_GITHUB_CLIENT_ID,
@@ -108,7 +108,7 @@ def get_oauth_config():
             "token_url": "https://github.com/login/oauth/access_token",
             "userinfo_url": "https://api.github.com/user",
             "scope": "read:user user:email",
-            "redirect_uri": f"{base_url}/api/auth/oauth/github/callback"
+            "redirect_uri": f"{config.BASE_URL}/api/auth/oauth/github/callback"
         },
         "yandex": {
             "client_id": config.OAUTH_YANDEX_CLIENT_ID,
@@ -117,7 +117,7 @@ def get_oauth_config():
             "token_url": "https://oauth.yandex.ru/token",
             "userinfo_url": "https://login.yandex.ru/info",
             "scope": "login:email login:info",
-            "redirect_uri": f"{base_url}/api/auth/oauth/yandex/callback"
+            "redirect_uri": f"{config.BASE_URL}/api/auth/oauth/yandex/callback"
         },
         "vk": {
             "client_id": config.OAUTH_VK_CLIENT_ID,
@@ -126,7 +126,7 @@ def get_oauth_config():
             "token_url": "https://oauth.vk.com/access_token",
             "userinfo_url": "https://api.vk.com/method/users.get",
             "scope": "email",
-            "redirect_uri": f"{base_url}/api/auth/oauth/vk/callback",
+            "redirect_uri": f"{config.BASE_URL}/api/auth/oauth/vk/callback",
             "v": "5.131"  # Версия API VK
         }
     }
