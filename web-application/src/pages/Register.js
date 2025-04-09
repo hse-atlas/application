@@ -24,10 +24,8 @@ const Register = () => {
       message.success(response.data.message || "Registration successful!");
       console.log("Registration successful:", response.data);
 
-      // Очищаем форму после успешной регистрации
       form.resetFields();
 
-      // Перенаправление на страницу входа с небольшой задержкой
       setTimeout(() => {
         navigate("/login");
       }, 1500);
@@ -36,24 +34,47 @@ const Register = () => {
 
       // Обрабатываем различные типы ошибок
       if (error.response) {
-        // Ошибки от сервера
-        if (error.response.status === 409) {
-          // Конфликты (уже существующий email или логин)
+        // Ошибки валидации Pydantic (422 Unprocessable Entity)
+        if (error.response.status === 422) {
+          const errors = error.response.data.detail;
+          if (Array.isArray(errors)) {
+            // Обрабатываем все ошибки валидации
+            errors.forEach((err) => {
+              if (err.loc && err.loc.includes("password") && err.msg) {
+                // Специальная обработка ошибки пароля
+                message.error(err.msg);
+                form.setFields([{
+                  name: 'password',
+                  errors: [err.msg],
+                }]);
+              } else if (err.msg) {
+                // Общие ошибки валидации
+                message.error(err.msg);
+              }
+            });
+            return;
+          }
+        }
+        // Конфликты (уже существующий email или логин)
+        else if (error.response.status === 409) {
           errorMessage = error.response.data.detail;
-        } else if (error.response.status === 400) {
-          // Ошибки валидации (например, пароль не соответствует требованиям)
-          errorMessage = error.response.data.detail;
-        } else {
-          // Другие ошибки сервера
+          message.error(errorMessage);
+        }
+        // Другие ошибки сервера
+        else {
           errorMessage = error.response.data.detail || error.response.statusText;
+          message.error(errorMessage);
         }
       } else if (error.request) {
         // Ошибки сети (нет ответа от сервера)
         errorMessage = "Network error. Please check your connection.";
+        message.error(errorMessage);
+      } else {
+        // Другие ошибки
+        message.error(error.message);
       }
 
       console.error("Registration error:", errorMessage);
-      message.error(errorMessage);
     } finally {
       setLoading(false);
     }
