@@ -1,5 +1,5 @@
 import "normalize.css";
-import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
+import { BrowserRouter as Router, Route, Routes, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -12,10 +12,16 @@ import UserRegisterEmbed from "./components/UserRegisterEmbed";
 import tokenRefreshService from "./services/tokenRefreshService";
 
 function App() {
+  const location = useLocation();
+
   useEffect(() => {
-    // Запускаем сервис обновления токенов, если пользователь авторизован
+    // Проверяем, не находимся ли мы на embed-страницах
+    const isEmbedPage = location.pathname.startsWith('/embed/login/') ||
+      location.pathname.startsWith('/embed/register/');
+
+    // Запускаем сервис обновления токенов только если не на embed-странице и есть токен
     const accessToken = localStorage.getItem("access_token");
-    if (accessToken) {
+    if (accessToken && !isEmbedPage) {
       tokenRefreshService.start();
     }
 
@@ -23,7 +29,7 @@ function App() {
     return () => {
       tokenRefreshService.stop();
     };
-  }, []);
+  }, [location.pathname]); // Зависимость от pathname для перезапуска эффекта при смене пути
 
   return (
     <Router>
