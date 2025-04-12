@@ -6,6 +6,8 @@ const AddProject = ({ visible, onCancel, onAdd }) => {
   const [form] = Form.useForm();
   const [oauthEnabled, setOauthEnabled] = useState(false);
   const [oauthProviders, setOauthProviders] = useState({
+    // Удалить вводимые поля для oauthProviders
+    // и использовать только checkbox для включения/выключения
     google: {
       enabled: false,
       client_id: "",

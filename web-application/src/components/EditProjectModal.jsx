@@ -81,6 +81,8 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
         >
           <Input placeholder="Enter project URL" />
         </Form.Item>
+
+        // Добавить включение/выключение OAuth
       </Form>
 
       <div style={{ textAlign: "right", marginTop: "16px" }}>

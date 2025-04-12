@@ -29,8 +29,10 @@ const UserLoginEmbed = () => {
                 }
             }, "*");
 
+            // Добавить перенаправление на страницу, которая указана в Project URL
         } catch (error) {
             message.error(error.message);
+            // Добавить обработку и вывод ошибок
         } finally {
             setLoading(false);
         }
