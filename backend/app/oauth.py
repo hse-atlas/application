@@ -345,7 +345,7 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
     logger.info(f"Updated last_login for admin ID: {admin.id}")
 
     # Создаем ответ с редиректом
-    response = RedirectResponse(url="/dashboard")  # Редирект на дашборд
+    response = RedirectResponse(url="/")  # Редирект на дашборд
     logger.info("Setting cookies with tokens")
     response.set_cookie(key="admins_access_token", value=access_token, httponly=True, secure=True, samesite="strict")
     response.set_cookie(key="admins_refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict")
