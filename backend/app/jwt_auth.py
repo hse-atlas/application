@@ -12,6 +12,9 @@ from app.database import async_session_maker
 from app.schemas import AdminsBase, UsersBase
 from app.config import get_auth_data, get_redis_url, config
 
+import logging
+logger = logging.getLogger(__name__)
+
 # Redis для хранения черного списка токенов и refresh токенов
 redis_client = redis.from_url(get_redis_url(), decode_responses=True)
 
@@ -37,63 +40,102 @@ async def get_async_session() -> AsyncSession:
 # Функция для создания access токена
 async def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
+    logger.info(f"Creating access token for user ID: {to_encode.get('sub')}")
 
     # Добавляем jti (JWT ID) для возможности отзыва токена
-    to_encode.update({"jti": str(uuid.uuid4())})
+    jti = str(uuid.uuid4())
+    to_encode.update({"jti": jti})
+    logger.info(f"JWT ID (jti): {jti}")
 
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
 
+    expire_str = expire.isoformat()
+    logger.info(f"Token expiration: {expire_str}")
+
     to_encode.update({"exp": expire, "type": "access"})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    try:
+        encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+        logger.info(f"Access token created: {encoded_jwt[:10]}...")
+        return encoded_jwt
+    except Exception as e:
+        logger.error(f"Error encoding JWT: {str(e)}")
+        raise
 
 
 # Функция для создания refresh токена
 async def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
+    logger.info(f"Creating refresh token for user ID: {to_encode.get('sub')}")
 
     # Добавляем jti (JWT ID) для возможности отзыва токена
     jti = str(uuid.uuid4())
     to_encode.update({"jti": jti})
+    logger.info(f"JWT ID (jti): {jti}")
 
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
 
+    expire_str = expire.isoformat()
+    logger.info(f"Token expiration: {expire_str}")
+
     to_encode.update({"exp": expire, "type": "refresh"})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    try:
+        encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+        logger.info(f"Refresh token created: {encoded_jwt[:10]}...")
 
-    # Сохраняем refresh токен в Redis для проверки валидности
-    # и возможности отзыва всех токенов пользователя
-    expiry = int(expires_delta.total_seconds()) if expires_delta else REFRESH_TOKEN_EXPIRE_DAYS * 86400
-    await redis_client.setex(f"refresh_token:{jti}", expiry, to_encode["sub"])
+        # Сохраняем refresh токен в Redis для проверки валидности
+        # и возможности отзыва всех токенов пользователя
+        expiry = int(expires_delta.total_seconds()) if expires_delta else REFRESH_TOKEN_EXPIRE_DAYS * 86400
+        logger.info(f"Saving refresh token in Redis with key: refresh_token:{jti}, expiry: {expiry}s")
+        await redis_client.setex(f"refresh_token:{jti}", expiry, to_encode["sub"])
+        logger.info("Refresh token saved in Redis")
 
-    return encoded_jwt
+        return encoded_jwt
+    except Exception as e:
+        logger.error(f"Error encoding or storing refresh JWT: {str(e)}")
+        raise
 
 
 # Функция для проверки и декодирования токена
 async def decode_token(token: str) -> Dict[str, Any]:
     try:
+        logger.info(f"Decoding token: {token[:10]}...")
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        logger.info(f"Token decoded successfully: type={payload.get('type')}, sub={payload.get('sub')}")
 
         # Проверяем, что токен не в черном списке
         jti = payload.get("jti")
-        if jti and await redis_client.exists(f"blacklist:{jti}"):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token has been revoked",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        if jti:
+            in_blacklist = await redis_client.exists(f"blacklist:{jti}")
+            logger.info(f"Checking if token is in blacklist. JTI: {jti}, In blacklist: {in_blacklist}")
+            if in_blacklist:
+                logger.warning(f"Token with JTI {jti} has been revoked")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been revoked",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        else:
+            logger.warning("Token has no JTI claim")
 
         return payload
-    except JWTError:
+    except JWTError as e:
+        logger.error(f"JWT error while decoding token: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error while decoding token: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Token validation error: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -178,18 +220,24 @@ async def should_refresh_token(payload) -> bool:
 
 # Middleware для проверки и обновления токенов - модифицированная версия с "скользящим окном"
 async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async_session)):
+    logger.info(f"Auth middleware check for path: {request.url.path}")
+
     # Получаем токены из cookies или заголовка Authorization
     access_token = request.cookies.get("admins_access_token") or request.cookies.get("users_access_token")
+    logger.info(f"Access token from cookies: {'Found' if access_token else 'Not found'}")
 
     # Или в заголовке Authorization
     if not access_token:
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
             access_token = auth_header.replace("Bearer ", "")
+            logger.info("Access token found in Authorization header")
 
     if not access_token:
+        logger.info("No access token found in request")
         # Требуем аутентификацию для защищенных маршрутов
         if request.url.path.startswith("/api/protected"):
+            logger.warning(f"Protected route {request.url.path} accessed without auth token")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Not authenticated",
@@ -199,11 +247,14 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
 
     try:
         # Декодируем и проверяем токен
+        logger.info("Decoding access token")
         payload = await decode_token(access_token)
         token_type = payload.get("type")
+        logger.info(f"Token type: {token_type}")
 
         # Проверяем, что это access токен
         if token_type != "access":
+            logger.warning(f"Expected access token, but got {token_type}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token type",
@@ -213,41 +264,51 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
         # Получаем пользователя из БД
         user_id = payload.get("sub")
         if not user_id:
+            logger.warning("Token payload missing 'sub' claim")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+        logger.info(f"User ID from token: {user_id}")
+
         # Определяем тип пользователя (admin или user)
         is_admin_route = request.url.path.startswith("/api/v1/AuthService/admin") or request.url.path.startswith(
             "/projects/owner")
+        logger.info(f"Is admin route: {is_admin_route}")
 
         # Определяем user_type для логирования
         user_type = None
 
         if is_admin_route:
+            logger.info(f"Looking for admin with ID: {user_id}")
             result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
             user = result.scalar_one_or_none()
             if not user:
+                logger.warning(f"Admin with ID {user_id} not found in database")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Admin not found",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
+            logger.info(f"Admin found: ID={user.id}, login={user.login}, email={user.email}")
             # Добавляем информацию о пользователе в request.state
             request.state.user = user
             request.state.user_type = "admin"
             user_type = "admin"
         else:
+            logger.info(f"Looking for user with ID: {user_id}")
             result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
             user = result.scalar_one_or_none()
             if not user:
+                logger.warning(f"User with ID {user_id} not found in database")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="User not found",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
+            logger.info(f"User found: ID={user.id}, login={user.login}, email={user.email}")
             # Добавляем информацию о пользователе в request.state
             request.state.user = user
             request.state.user_type = "user"
@@ -255,25 +316,33 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
 
         # СКОЛЬЗЯЩЕЕ ОКНО: проверяем, нужно ли обновить токен
         if user_type == "admin" and await should_refresh_token(payload):
+            logger.info("Token requires refresh (sliding window)")
             # Создаем новые токены для скользящего окна только для админов
             new_access_token = await create_access_token({"sub": user_id})
             new_refresh_token = await create_refresh_token({"sub": user_id})
+            logger.info(f"New tokens created: access={new_access_token[:10]}..., refresh={new_refresh_token[:10]}...")
 
             # Устанавливаем новые токены в request.state, чтобы они были добавлены в ответ
             request.state.new_access_token = new_access_token
             request.state.new_refresh_token = new_refresh_token
 
             # Отзываем старый токен, чтобы он не мог быть использован
+            logger.info("Revoking old token")
             await revoke_token(access_token)
 
+        logger.info(f"Auth middleware check completed successfully for {user_type}")
         return user
 
-    except HTTPException:
+    except HTTPException as e:
+        logger.warning(f"HTTP exception in auth middleware: {e.detail}")
         # Проверяем refresh токен
         refresh_token = request.cookies.get("admins_refresh_token") or request.cookies.get("users_refresh_token")
+        logger.info(f"Refresh token from cookies: {'Found' if refresh_token else 'Not found'}")
+
         if not refresh_token:
             # Если нет refresh токена, возвращаем исходную ошибку
             if request.url.path.startswith("/api/protected"):
+                logger.warning(f"Protected route {request.url.path} accessed without refresh token")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Not authenticated",
@@ -283,10 +352,12 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
 
         try:
             # Декодируем и проверяем refresh токен
+            logger.info("Attempting to use refresh token")
             refresh_payload = await decode_token(refresh_token)
 
             # Проверяем, что это refresh токен
             if refresh_payload.get("type") != "refresh":
+                logger.warning(f"Expected refresh token, but got {refresh_payload.get('type')}")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid token type",
@@ -295,7 +366,9 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
 
             # Получаем jti для проверки в Redis
             jti = refresh_payload.get("jti")
+            logger.info(f"Checking refresh token JTI: {jti}")
             if not jti or not await redis_client.exists(f"refresh_token:{jti}"):
+                logger.warning(f"Invalid refresh token JTI: {jti}")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid refresh token",
@@ -305,56 +378,70 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
             # Получаем user_id из токена
             user_id = refresh_payload.get("sub")
             if not user_id:
+                logger.warning("Refresh token missing 'sub' claim")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid token payload",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
 
+            logger.info(f"User ID from refresh token: {user_id}")
+
             # Отзываем использованный refresh токен (one-time use)
+            logger.info("Revoking used refresh token")
             await revoke_token(refresh_token)
 
             # Создаем новую пару токенов
+            logger.info("Creating new tokens using refresh token")
             new_access_token = await create_access_token({"sub": user_id})
             new_refresh_token = await create_refresh_token({"sub": user_id})
+            logger.info(f"New tokens created: access={new_access_token[:10]}..., refresh={new_refresh_token[:10]}...")
 
             # Устанавливаем новые токены в ответе
-            # Это нужно будет добавить в middleware
             request.state.new_access_token = new_access_token
             request.state.new_refresh_token = new_refresh_token
 
             # Определяем тип пользователя
             is_admin_route = request.url.path.startswith("/api/v1/AuthService/admin")
+            logger.info(f"Is admin route (refresh flow): {is_admin_route}")
 
             if is_admin_route:
+                logger.info(f"Looking for admin with ID: {user_id}")
                 result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
                 user = result.scalar_one_or_none()
                 if not user:
+                    logger.warning(f"Admin with ID {user_id} not found in database")
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Admin not found",
                         headers={"WWW-Authenticate": "Bearer"},
                     )
+                logger.info(f"Admin found: ID={user.id}, login={user.login}, email={user.email}")
                 # Добавляем информацию о пользователе в request.state
                 request.state.user = user
                 request.state.user_type = "admin"
             else:
+                logger.info(f"Looking for user with ID: {user_id}")
                 result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
                 user = result.scalar_one_or_none()
                 if not user:
+                    logger.warning(f"User with ID {user_id} not found in database")
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="User not found",
                         headers={"WWW-Authenticate": "Bearer"},
                     )
+                logger.info(f"User found: ID={user.id}, login={user.login}, email={user.email}")
                 # Добавляем информацию о пользователе в request.state
                 request.state.user = user
                 request.state.user_type = "user"
 
+            logger.info("Token refresh completed successfully")
             return user
 
-        except (HTTPException, JWTError):
+        except (HTTPException, JWTError) as e:
             # Если refresh токен недействителен, требуем повторную аутентификацию
+            logger.error(f"Error during refresh token handling: {str(e)}")
             if request.url.path.startswith("/api/protected"):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,

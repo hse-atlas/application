@@ -137,12 +137,21 @@ async def vk_callback(request: Request, code: str, state: str, session: AsyncSes
 
 # Общая функция для обработки callback от OAuth провайдеров
 async def process_oauth_callback(provider: str, code: str, state: str, request: Request, session: AsyncSession):
+    # Добавляем логирование в начале функции
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"OAuth callback started for provider: {provider}")
+    logger.info(f"State from session: {request.session.get('oauth_state')}, Received state: {state}")
+
     # Проверка state для защиты от CSRF
     if state != request.session.get("oauth_state"):
+        logger.error(
+            f"Invalid state parameter. Session state: {request.session.get('oauth_state')}, Received state: {state}")
         raise HTTPException(status_code=400, detail="Invalid state parameter")
 
     provider_config = OAUTH_PROVIDERS[provider]
     user_type = request.session.get("user_type", "admin")
+    logger.info(f"User type from session: {user_type}")
 
     # Обмен кода на токен
     token_data = {
@@ -155,18 +164,30 @@ async def process_oauth_callback(provider: str, code: str, state: str, request: 
 
     headers = {"Accept": "application/json"}
     async with httpx.AsyncClient() as client:
+        logger.info(f"Exchanging code for token with URL: {provider_config['token_url']}")
         response = await client.post(provider_config["token_url"], data=token_data, headers=headers)
+        logger.info(f"Token response status: {response.status_code}")
+
+        if response.status_code != 200:
+            logger.error(f"Failed to obtain token. Status: {response.status_code}, Response: {response.text}")
+            raise HTTPException(status_code=400,
+                                detail=f"Failed to obtain access token. Provider response: {response.text}")
 
         if provider == "github" and response.headers.get("content-type") == "application/x-www-form-urlencoded":
             # GitHub может вернуть данные в формате x-www-form-urlencoded
             from urllib.parse import parse_qs
             token_response = parse_qs(response.text)
             access_token = token_response.get("access_token", [""])[0]
+            logger.info(
+                f"GitHub token parsed from form data, token starts with: {access_token[:10] if access_token else 'None'}")
         else:
             token_response = response.json()
             access_token = token_response.get("access_token")
+            logger.info(
+                f"Token received from provider, token starts with: {access_token[:10] if access_token else 'None'}")
 
         if not access_token:
+            logger.error(f"Access token not found in response: {token_response}")
             raise HTTPException(status_code=400, detail="Failed to obtain access token")
 
         # Получение информации о пользователе
@@ -182,27 +203,42 @@ async def process_oauth_callback(provider: str, code: str, state: str, request: 
             }
             user_info_headers = {}  # VK не использует Authorization header
 
+        logger.info(f"Getting user info from URL: {provider_config['userinfo_url']}")
         user_info_response = await client.get(
             provider_config["userinfo_url"],
             params=user_info_params,
             headers=user_info_headers
         )
+        logger.info(f"User info response status: {user_info_response.status_code}")
+
+        if user_info_response.status_code != 200:
+            logger.error(
+                f"Failed to get user info. Status: {user_info_response.status_code}, Response: {user_info_response.text}")
+            raise HTTPException(status_code=400,
+                                detail=f"Failed to get user info. Provider response: {user_info_response.text}")
+
         user_info = user_info_response.json()
+        logger.info(f"User info received: {user_info}")
 
         # Извлечение email и имени из разных провайдеров
         email, name = extract_user_info(provider, user_info, token_response)
+        logger.info(f"Extracted user info: email={email}, name={name}")
 
         if user_type == "admin":
             # Регистрация или авторизация администратора
+            logger.info(f"Processing admin OAuth with email={email}, provider={provider}")
             response = await process_admin_oauth(email, name, provider, user_info.get("id"), session)
         else:
             # Регистрация или авторизация пользователя
             project_id = request.session.get("project_id")
             if not project_id:
+                logger.error("Missing project_id in session")
                 raise HTTPException(status_code=400, detail="Missing project_id")
+            logger.info(f"Processing user OAuth with email={email}, provider={provider}, project_id={project_id}")
             response = await process_user_oauth(email, name, provider, user_info.get("id"), int(project_id), session)
 
         # Очистка сессии
+        logger.info("OAuth process completed successfully, cleaning up session")
         del request.session["oauth_state"]
         if "user_type" in request.session:
             del request.session["user_type"]
@@ -246,12 +282,17 @@ def extract_user_info(provider: str, user_info, token_response=None):
 # Обработка OAuth для администраторов
 async def process_admin_oauth(email: str, name: str, provider: str, provider_user_id: str, session: AsyncSession):
     from sqlalchemy import select
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.info(f"Processing admin OAuth for email={email}, provider={provider}")
 
     # Проверяем, существует ли уже администратор с таким email
     result = await session.execute(select(AdminsBase).where(AdminsBase.email == email))
     admin = result.scalar_one_or_none()
 
     if not admin:
+        logger.info(f"Admin with email {email} not found, creating new admin")
         # Создаем нового администратора
         import secrets
         import string
@@ -267,6 +308,7 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
         from app.security import get_password_hash
         existing_login = await find_one_or_none_admin(login=login)
         if existing_login:
+            logger.info(f"Login {login} already exists, generating unique suffix")
             login = f"{login}_{secrets.token_hex(4)}"
 
         hashed_password = get_password_hash(random_password)
@@ -278,26 +320,36 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
             "oauth_user_id": provider_user_id
         }
 
+        logger.info(f"Creating new admin with data: {admin_data}")
         admin = await add_admin(**admin_data)
+        logger.info(f"New admin created with ID: {admin.id}")
     elif not admin.oauth_provider:
         # Если администратор существует, но без OAuth, обновляем данные
+        logger.info(f"Admin exists but without OAuth, updating OAuth data for admin ID: {admin.id}")
         admin.oauth_provider = provider
         admin.oauth_user_id = provider_user_id
         await session.commit()
+    else:
+        logger.info(f"Admin already exists with ID: {admin.id}, provider: {admin.oauth_provider}")
 
     # Создаем JWT токен
+    logger.info(f"Creating JWT tokens for admin ID: {admin.id}")
     access_token = await create_access_token({"sub": str(admin.id)})
     refresh_token = await create_refresh_token({"sub": str(admin.id)})
+    logger.info(
+        f"Tokens created - Access token starts with: {access_token[:10]}, Refresh token starts with: {refresh_token[:10]}")
 
     # Обновляем last_login
     admin.last_login = datetime.now()
-    admin.last_login = datetime.now()
     await session.commit()
+    logger.info(f"Updated last_login for admin ID: {admin.id}")
 
     # Создаем ответ с редиректом
     response = RedirectResponse(url="/dashboard")  # Редирект на дашборд
+    logger.info("Setting cookies with tokens")
     response.set_cookie(key="admins_access_token", value=access_token, httponly=True, secure=True, samesite="strict")
     response.set_cookie(key="admins_refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict")
+    logger.info("OAuth authentication successful, redirecting to dashboard")
 
     return response
 
