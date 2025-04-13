@@ -167,9 +167,19 @@ async def get_admin_profile(
     Получение данных администратора
     Требует валидного JWT токена администратора
     """
-    logger.info(f"Admin profile requested: id={admin.id}, email={admin.email}")
-    return {
-        "login": admin.login,
-        "email": admin.email,
-        "user_role": "admin"
-    }
+    logger.info(f"Admin profile request processing: id={admin.id}, email={admin.email}")
+
+    try:
+        response_data = {
+            "login": admin.login,
+            "email": admin.email,
+            "user_role": "admin"
+        }
+        logger.info(f"Admin profile response prepared: {response_data}")
+        return response_data
+    except Exception as e:
+        logger.error(f"Error in get_admin_profile: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error retrieving admin profile"
+        )

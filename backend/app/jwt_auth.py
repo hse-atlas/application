@@ -564,11 +564,14 @@ async def get_current_user(
 
 # Получение только администратора
 async def get_current_admin(current_user=Depends(get_current_user)):
+    logger.info(f"Checking if user is admin: {current_user}")
     if current_user["type"] != "admin":
+        logger.warning(f"User {current_user['user'].id} is not an admin")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions",
         )
+    logger.info(f"User confirmed as admin: {current_user['user'].id}")
     return current_user["user"]
 
 
