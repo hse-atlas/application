@@ -274,8 +274,14 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
         logger.info(f"User ID from token: {user_id}")
 
         # Определяем тип пользователя (admin или user)
-        is_admin_route = request.url.path.startswith("/api/v1/AuthService/admin") or request.url.path.startswith(
-            "/projects/owner")
+        is_admin_route = any([
+            request.url.path.startswith("/api/auth/admin"),  # Маршруты аутентификации админа
+            request.url.path.startswith("/api/projects"),  # Маршруты управления проектами
+            request.url.path.startswith("/api/users"),  # Маршруты управления пользователями
+            request.url.path == "/api/debug/token-info",  # Маршруты отладки
+            request.url.path == "/api/debug/oauth-status",
+            request.url.path == "/api/debug/validate-token"
+        ])
         logger.info(f"Is admin route: {is_admin_route}")
 
         # Определяем user_type для логирования
@@ -402,7 +408,14 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
             request.state.new_refresh_token = new_refresh_token
 
             # Определяем тип пользователя
-            is_admin_route = request.url.path.startswith("/api/v1/AuthService/admin")
+            is_admin_route = any([
+                request.url.path.startswith("/api/auth/admin"),  # Маршруты аутентификации админа
+                request.url.path.startswith("/api/projects"),  # Маршруты управления проектами
+                request.url.path.startswith("/api/users"),  # Маршруты управления пользователями
+                request.url.path == "/api/debug/token-info",  # Маршруты отладки
+                request.url.path == "/api/debug/oauth-status",
+                request.url.path == "/api/debug/validate-token"
+            ])
             logger.info(f"Is admin route (refresh flow): {is_admin_route}")
 
             if is_admin_route:
