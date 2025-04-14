@@ -196,7 +196,7 @@ async def get_project_details(
         current_admin=Depends(get_current_admin),
 ):
     """
-    Получение деталей проекта, включая список пользователей с их ролями.
+    Получение деталей проекта, включая список пользователей с их ролями и статусами.
     """
     # Основной запрос для получения проекта
     project_stmt = (
@@ -227,13 +227,14 @@ async def get_project_details(
             detail="Проект не найден или доступ запрещён"
         )
 
-    # Запрос для получения пользователей с их ролями
+    # Запрос для получения пользователей с их ролями и статусами
     users_stmt = (
         select(
             UsersBase.id,
             UsersBase.login,
             UsersBase.email,
             UsersBase.role,
+            UsersBase.status,  # Добавляем статус
             UsersBase.oauth_provider
         )
         .where(UsersBase.project_id == str(project_id))
@@ -242,13 +243,14 @@ async def get_project_details(
     users_result = await session.execute(users_stmt)
     users = users_result.all()
 
-    # Формируем ответ с ролями
+    # Формируем ответ с ролями и статусами
     user_responses = [
         UserResponse(
             id=user.id,
             login=user.login,
             email=user.email,
             role=user.role,
+            status=user.status,  # Добавляем статус
             oauth_provider=user.oauth_provider
         ) for user in users
     ]

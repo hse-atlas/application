@@ -8,7 +8,7 @@ from sqlalchemy.future import select
 
 from app.database import async_session_maker
 from app.jwt_auth import create_access_token, create_refresh_token
-from app.schemas import RegisterData, LoginData, TokenResponse, ProjectsBase
+from app.schemas import RegisterData, LoginData, TokenResponse, ProjectsBase, UserStatus
 from app.security import verify_password, get_password_hash, password_meets_requirements
 
 # Создаем лимитер для защиты от брутфорс-атак
@@ -106,6 +106,13 @@ async def user_login(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
+        )
+
+    # Проверка статуса пользователя
+    if user.status == UserStatus.BLOCKED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Ваш аккаунт заблокирован. Обратитесь к администратору проекта."
         )
 
     # Проверка пароля

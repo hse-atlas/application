@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.database import async_session_maker
 from app.jwt_auth import get_current_admin
-from app.schemas import UsersBase, ProjectsBase, UserOut, UsersProjectOut, UserUpdate
+from app.schemas import UsersBase, ProjectsBase, UserOut, UsersProjectOut, UserUpdate, UserStatus
 from app.security import get_password_hash, password_meets_requirements
 
 router = APIRouter(prefix='/api/users', tags=['Users CRUD'])
@@ -175,3 +175,93 @@ async def get_users_by_project(
         project_description=project.description,
         users=users,
     )
+
+@router.patch("/{user_id}/block", response_model=UserOut)
+async def block_user(
+    user_id: int,
+    session: AsyncSession = Depends(get_async_session),
+    current_admin=Depends(get_current_admin)
+):
+    """
+    Блокирует пользователя по его ID (устанавливает статус 'blocked')
+    """
+    # Находим пользователя
+    result = await session.execute(select(UsersBase).where(UsersBase.id == user_id))
+    db_user = result.scalar_one_or_none()
+    
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    # Проверяем права администратора на проект пользователя
+    project_result = await session.execute(
+        select(ProjectsBase).where(
+            cast(ProjectsBase.id, String) == str(db_user.project_id),
+            ProjectsBase.owner_id == current_admin.id
+        )
+    )
+    project = project_result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="У вас нет прав для блокировки этого пользователя"
+        )
+
+    # Проверяем, не заблокирован ли уже пользователь
+    if db_user.status == UserStatus.BLOCKED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пользователь уже заблокирован"
+        )
+
+    # Устанавливаем статус blocked
+    db_user.status = UserStatus.BLOCKED
+    await session.commit()
+    await session.refresh(db_user)
+    
+    return db_user
+
+@router.patch("/{user_id}/unblock", response_model=UserOut)
+async def unblock_user(
+    user_id: int,
+    session: AsyncSession = Depends(get_async_session),
+    current_admin=Depends(get_current_admin)
+):
+    """
+    Разблокирует пользователя по его ID (устанавливает статус 'active')
+    """
+    # Находим пользователя
+    result = await session.execute(select(UsersBase).where(UsersBase.id == user_id))
+    db_user = result.scalar_one_or_none()
+    
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    # Проверяем права администратора
+    project_result = await session.execute(
+        select(ProjectsBase).where(
+            cast(ProjectsBase.id, String) == str(db_user.project_id),
+            ProjectsBase.owner_id == current_admin.id
+        )
+    )
+    project = project_result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="У вас нет прав для разблокировки этого пользователя"
+        )
+
+    # Проверяем, не активен ли уже пользователь
+    if db_user.status == UserStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пользователь уже активен"
+        )
+
+    # Устанавливаем статус active
+    db_user.status = UserStatus.ACTIVE
+    await session.commit()
+    await session.refresh(db_user)
+    
+    return db_user

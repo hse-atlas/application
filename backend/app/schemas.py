@@ -3,6 +3,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional, List, Dict, Any
 from uuid import UUID
+from pydantic import UUID4
 
 from app.database import Base, int_pk, uuid_pk
 from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
@@ -60,6 +61,9 @@ class ProjectsBase(Base):
     def __repr__(self):
         return f"<ProjectsBase(id={self.id}, name={self.name})>"
 
+class UserStatus(str, Enum):
+    ACTIVE = "active"
+    BLOCKED = "blocked"
 
 class UsersBase(Base):
     __tablename__ = "users"
@@ -70,7 +74,11 @@ class UsersBase(Base):
     password: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # Nullable для OAuth
     project_id: Mapped[UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
     role: Mapped[str] = mapped_column(String, nullable=False, default="user")
-
+    status: Mapped[UserStatus] = mapped_column(
+        SQLAlchemyEnum(UserStatus),
+        nullable=False,
+        default=UserStatus.ACTIVE
+    )
     # OAuth поля
     oauth_provider: Mapped[Optional[str]] = mapped_column(SQLAlchemyEnum(OAuthProvider), nullable=True)
     oauth_user_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -206,16 +214,6 @@ class ProjectOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class UserResponse(BaseModel):
-    id: int
-    login: str
-    email: str
-    role: str
-    oauth_provider: Optional[OAuthProvider] = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class ProjectDetailResponse(BaseModel):
     id: UUID
     name: str
@@ -237,7 +235,7 @@ class UserBase(BaseModel):
     login: str
     email: str
     password: Optional[str] = None
-    project_id: int
+    project_id: UUID4
     oauth_provider: Optional[OAuthProvider] = None
     oauth_user_id: Optional[str] = None
 
@@ -246,7 +244,7 @@ class UserCreate(BaseModel):
     login: str
     email: EmailStr
     password: Optional[str] = None
-    project_id: int
+    project_id: UUID4
     oauth_provider: Optional[OAuthProvider] = None
     oauth_user_id: Optional[str] = None
 
@@ -278,13 +276,25 @@ class UserUpdate(BaseModel):
     login: Optional[str] = None
     email: Optional[EmailStr] = None
     password: Optional[str] = None
-
+    status: Optional[UserStatus] = None  # Добавляем поле статуса
 
 class UserOut(BaseModel):
     id: int
     login: str
     email: str
-    project_id: int
+    project_id: UUID4
+    role: str
+    status: UserStatus
+    oauth_provider: Optional[OAuthProvider] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class UserResponse(BaseModel):
+    id: int
+    login: str
+    email: str
+    role: str
+    status: UserStatus
     oauth_provider: Optional[OAuthProvider] = None
 
     model_config = ConfigDict(from_attributes=True)

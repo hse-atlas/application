@@ -85,25 +85,33 @@ class ProjectsBase(Base):
         return f"<ProjectsBase(id={self.id}, name={self.name})>"
 
 
+class UserStatus(str, Enum):
+    ACTIVE = "active"
+    BLOCKED = "blocked"
+
 class UsersBase(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     login: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
-    password: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # Nullable для OAuth
+    password: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     project_id: Mapped[UUID] = mapped_column(String(36), ForeignKey("projects.id"), nullable=False)
-    role: Mapped[str] = mapped_column(String, nullable=False, default="user") #новый столбец роли
+    role: Mapped[str] = mapped_column(String, nullable=False, default="user")
+    status: Mapped[UserStatus] = mapped_column(
+        SQLAlchemyEnum(UserStatus),
+        nullable=False,
+        default=UserStatus.ACTIVE
+    )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now(),
-                                                 onupdate=func.now())
-
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+    
     # OAuth поля
     oauth_provider: Mapped[Optional[str]] = mapped_column(SQLAlchemyEnum(OAuthProvider), nullable=True)
     oauth_user_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     last_login: Mapped[Optional[datetime]] = mapped_column(nullable=True)
 
-    # Связь: пользователь принадлежит одному проекту
+    # Связь
     project: Mapped["ProjectsBase"] = relationship("ProjectsBase", back_populates="users")
 
     def __repr__(self):
