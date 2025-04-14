@@ -299,7 +299,7 @@ export const deleteUser = async (id) => {
   }
 };
 
-export const blockUser = async (id) => {
+export const blockUser = async (user_id) => {
   try {
     await checkAndRefreshTokenIfNeeded();
     const response = await api.patch(`/api/users/${user_id}/block`);
@@ -309,7 +309,7 @@ export const blockUser = async (id) => {
   }
 };
 
-export const unblockUser = async (id) => {
+export const unblockUser = async (user_id) => {
   try {
     await checkAndRefreshTokenIfNeeded();
     const response = await api.patch(`/api/users/${user_id}/unblock`);
