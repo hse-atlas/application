@@ -104,35 +104,50 @@ async def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = 
 # Функция для проверки и декодирования токена
 async def decode_token(token: str) -> Dict[str, Any]:
     try:
-        logger.info(f"Decoding token: {token[:10]}...")
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        logger.info(f"Token decoded successfully: type={payload.get('type')}, sub={payload.get('sub')}")
+        # Декодируем токен без проверки подписи для получения payload
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_signature": False})
 
-        # Проверяем, что токен не в черном списке
+        logger.info(f"Token decoded: type={payload.get('type')}, sub={payload.get('sub')}")
+
         jti = payload.get("jti")
         exp = payload.get("exp")
         now = datetime.now(timezone.utc).timestamp()
 
+        # Проверяем срок действия токена
+        if exp and now > exp:
+            logger.info(f"Token {jti} has expired")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has expired",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Проверка черного списка с дополнительными условиями
         if jti:
-            # Проверяем черный список только для неистекших токенов
-            if exp and now <= exp:
-                in_blacklist = await redis_client.exists(f"blacklist:{jti}")
-                logger.info(f"Checking blacklist. JTI: {jti}, In blacklist: {in_blacklist}")
+            in_blacklist = await redis_client.exists(f"blacklist:{jti}")
+            logger.info(f"Blacklist check - JTI: {jti}, In blacklist: {in_blacklist}")
 
-                if in_blacklist:
-                    logger.warning(f"Token {jti} has been revoked")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Token has been revoked",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
-            else:
-                logger.info(f"Token {jti} has expired, skipping blacklist check")
+            if in_blacklist:
+                logger.warning(f"Token {jti} found in blacklist")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been revoked",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
+        # Полная проверка подписи токена
+        jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
 
-    except JWTError as e:
-        logger.error(f"JWT error while decoding token: {str(e)}")
+    except jwt.ExpiredSignatureError:
+        logger.warning("Token signature has expired")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.JWTError as e:
+        logger.error(f"JWT validation error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -143,29 +158,31 @@ async def decode_token(token: str) -> Dict[str, Any]:
 # Функция для отзыва токена (добавление в черный список)
 async def revoke_token(token: str):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_signature": False})
         jti = payload.get("jti")
-        if not jti:
-            return False
-
-        # Получаем время истечения токена
         exp = payload.get("exp")
         now = datetime.now(timezone.utc).timestamp()
 
-        # Проверяем, не истек ли токен
-        if exp and now > exp:
-            logger.info(f"Token {jti} already expired, no need to revoke")
+        # Проверяем, не истек ли токен до момента ревокации
+        if not exp or now > exp:
+            logger.info(f"Token {jti} already expired, skipping revocation")
             return False
 
         # Устанавливаем TTL только на неистекшие токены
-        ttl = max(1, int(exp - now)) if exp else 3600
+        ttl = max(1, int(exp - now))
+
+        # Добавляем дополнительную проверку перед ревокацией
+        existing_blacklist = await redis_client.exists(f"blacklist:{jti}")
+        if existing_blacklist:
+            logger.info(f"Token {jti} already in blacklist, skipping")
+            return False
 
         logger.info(f"Revoking token: JTI={jti}, TTL={ttl}")
         await redis_client.setex(f"blacklist:{jti}", ttl, "1")
 
         return True
-    except JWTError as e:
-        logger.error(f"Error revoking token: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error during token revocation: {str(e)}")
         return False
 
 
@@ -203,7 +220,7 @@ async def should_refresh_token(payload) -> bool:
     expiration_time = datetime.fromtimestamp(exp, tz=timezone.utc)
     current_time = datetime.now(timezone.utc)
 
-    # Получаем время создания токена (если нет, используем текущее время минус стандартное время жизни)
+    # Получаем время создания токена
     issued_at = payload.get("iat")
     if not issued_at:
         issued_at_time = current_time - timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -213,11 +230,19 @@ async def should_refresh_token(payload) -> bool:
     # Рассчитываем полную длительность действия токена
     token_lifetime = expiration_time - issued_at_time
 
-    # Рассчитываем порог обновления
+    # Рассчитываем порог обновления (70% от времени жизни токена)
     refresh_threshold = expiration_time - (token_lifetime * TOKEN_REFRESH_WINDOW_PERCENT)
 
     # Если текущее время после порога обновления, то обновляем токен
-    return current_time >= refresh_threshold
+    need_refresh = current_time >= refresh_threshold
+
+    logger.info(f"Token refresh check: "
+                f"Current time: {current_time}, "
+                f"Expiration: {expiration_time}, "
+                f"Refresh threshold: {refresh_threshold}, "
+                f"Need refresh: {need_refresh}")
+
+    return need_refresh
 
 
 # Middleware для проверки и обновления токенов - модифицированная версия с "скользящим окном"
