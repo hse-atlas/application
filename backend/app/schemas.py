@@ -213,6 +213,15 @@ class ProjectOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class UserResponse(BaseModel):
+    id: int
+    login: str
+    email: str
+    role: str
+    status: UserStatus
+    oauth_provider: Optional[OAuthProvider] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 class ProjectDetailResponse(BaseModel):
     id: UUID
@@ -283,16 +292,6 @@ class UserOut(BaseModel):
     login: str
     email: str
     project_id: UUID4
-    role: str
-    status: UserStatus
-    oauth_provider: Optional[OAuthProvider] = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-class UserResponse(BaseModel):
-    id: int
-    login: str
-    email: str
     role: str
     status: UserStatus
     oauth_provider: Optional[OAuthProvider] = None
