@@ -72,23 +72,27 @@ const ProjectDetails = () => {
 
   const handleToggleBlock = async (userId, currentStatus) => {
     try {
-      const userIdNumber = parseInt(userId, 10);
-
       if (currentStatus === 'active') {
-        await blockUser(id, userIdNumber);
+        // Блокировка пользователя
+        await blockUser(userId); // Передаем только userId (UUID)
         setUsers(prev => prev.map(user =>
           user.id === userId ? { ...user, status: 'blocked' } : user
         ));
-        message.success("User blocked successfully");
+        message.success("Пользователь заблокирован");
       } else {
-        await unblockUser(id, userIdNumber);
+        // Разблокировка пользователя
+        await unblockUser(userId); // Передаем только userId (UUID)
         setUsers(prev => prev.map(user =>
           user.id === userId ? { ...user, status: 'active' } : user
         ));
-        message.success("User unblocked successfully");
+        message.success("Пользователь разблокирован");
       }
     } catch (error) {
-      message.error(error.response?.data?.detail || "Failed to update user status");
+      console.error('Ошибка изменения статуса:', error);
+      message.error(
+        error.response?.data?.detail ||
+        'Не удалось изменить статус пользователя'
+      );
     }
   };
 
