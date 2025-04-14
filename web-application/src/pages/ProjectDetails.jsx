@@ -14,22 +14,25 @@ import {
   Divider,
   Tag,
   Select,
+  Switch,
 } from "antd";
 import {
   ArrowLeftOutlined,
   EditOutlined,
   DeleteFilled,
+  LockOutlined,
+  UnlockOutlined,
 } from "@ant-design/icons";
 import ProfileMenu from "../components/ProfileMenu";
 import EditProjectModal from "../components/EditProjectModal";
 import {
   getProjectDetails,
   deleteProject,
-  deleteUser,
   changeUserRole,
   isValidUUID,
-} from "../api"; // Импортируем isValidUUID
-import { useSelector } from "react-redux";
+  blockUser,
+  unblockUser,
+} from "../api";
 
 const { Title, Text, Link } = Typography;
 const { Option } = Select;
@@ -47,7 +50,6 @@ const ProjectDetails = () => {
   useEffect(() => {
     const fetchProjectDetails = async () => {
       try {
-        // Проверяем, что ID является валидным UUID
         if (!isValidUUID(id)) {
           setError("Invalid project ID format");
           setLoading(false);
@@ -66,6 +68,28 @@ const ProjectDetails = () => {
 
     id && fetchProjectDetails();
   }, [id]);
+
+  const handleToggleBlock = async (userId, currentStatus) => {
+    try {
+      const userIdNumber = parseInt(userId, 10);
+
+      if (currentStatus === 'active') {
+        await blockUser(id, userIdNumber);
+        setUsers(prev => prev.map(user =>
+          user.id === userId ? { ...user, status: 'blocked' } : user
+        ));
+        message.success("User blocked successfully");
+      } else {
+        await unblockUser(id, userIdNumber);
+        setUsers(prev => prev.map(user =>
+          user.id === userId ? { ...user, status: 'active' } : user
+        ));
+        message.success("User unblocked successfully");
+      }
+    } catch (error) {
+      message.error(error.response?.data?.detail || "Failed to update user status");
+    }
+  };
 
   const handleEditClick = () => setIsEditModalVisible(true);
 
@@ -101,6 +125,7 @@ const ProjectDetails = () => {
     }
   };
 
+  /*
   const handleDeleteUser = async (userId) => {
     try {
       await deleteUser(userId);
@@ -110,6 +135,7 @@ const ProjectDetails = () => {
       message.error(error.response?.data?.detail || "Failed to delete user");
     }
   };
+  */
 
   const handleRoleChange = async (userId, newRole) => {
     try {
@@ -160,12 +186,28 @@ const ProjectDetails = () => {
       dataIndex: "login",
       key: "login",
       sorter: (a, b) => a.login.localeCompare(b.login),
+      render: (text, record) => (
+        <span style={{
+          color: record.status === 'blocked' ? '#999' : 'inherit',
+          fontStyle: record.status === 'blocked' ? 'italic' : 'normal'
+        }}>
+          {text}
+        </span>
+      )
     },
     {
       title: "Email",
       dataIndex: "email",
       key: "email",
       sorter: (a, b) => a.email.localeCompare(b.email),
+      render: (text, record) => (
+        <span style={{
+          color: record.status === 'blocked' ? '#999' : 'inherit',
+          fontStyle: record.status === 'blocked' ? 'italic' : 'normal'
+        }}>
+          {text}
+        </span>
+      )
     },
     {
       title: "Role",
@@ -173,9 +215,10 @@ const ProjectDetails = () => {
       key: "role",
       render: (role, record) => (
         <Select
-          defaultValue={role}
+          value={role}
           onChange={(value) => handleRoleChange(record.id, value)}
           style={{ width: 100 }}
+          disabled={record.status === 'blocked'}
         >
           <Option value="user">User</Option>
           <Option value="admin">Admin</Option>
@@ -189,17 +232,36 @@ const ProjectDetails = () => {
       onFilter: (value, record) => record.role === value,
     },
     {
+      title: "Status",
+      dataIndex: "status",
+      key: "status",
+      render: (status) => (
+        <Tag color={status === 'active' ? 'green' : 'red'}>
+          {status === 'active' ? 'Active' : 'Blocked'}
+        </Tag>
+      ),
+      filters: [
+        { text: "Active", value: "active" },
+        { text: "Blocked", value: "blocked" },
+      ],
+      onFilter: (value, record) => record.status === value,
+    },
+    {
       title: "Action",
       key: "action",
       render: (_, record) => (
         <Popconfirm
-          title="Are you sure to delete this user?"
-          onConfirm={() => handleDeleteUser(record.id)}
+          title={`Are you sure to ${record.status === 'active' ? 'block' : 'unblock'} this user?`}
+          onConfirm={() => handleToggleBlock(record.id, record.status)}
           okText="Yes"
           cancelText="No"
           placement="topRight"
         >
-          <DeleteFilled style={{ color: "red", cursor: "pointer" }} />
+          {record.status === 'active' ? (
+            <LockOutlined style={{ color: '#ff4d4f', cursor: 'pointer' }} />
+          ) : (
+            <UnlockOutlined style={{ color: '#52c41a', cursor: 'pointer' }} />
+          )}
         </Popconfirm>
       ),
       width: 100,

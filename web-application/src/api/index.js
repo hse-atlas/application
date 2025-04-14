@@ -299,6 +299,26 @@ export const deleteUser = async (id) => {
   }
 };
 
+export const blockUser = async (id) => {
+  try {
+    await checkAndRefreshTokenIfNeeded();
+    const response = await api.patch(`/api/users/${user_id}/block`);
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const unblockUser = async (id) => {
+  try {
+    await checkAndRefreshTokenIfNeeded();
+    const response = await api.patch(`/api/users/${user_id}/unblock`);
+    return response;
+  } catch (error) {
+    throw error;
+  }
+};
+
 export const registerUser = async (project_id, data) => {
   try {
     // Проверяем, что ID является валидным UUID
