@@ -104,10 +104,8 @@ async def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = 
 # Функция для проверки и декодирования токена
 async def decode_token(token: str) -> Dict[str, Any]:
     try:
-        # Декодируем токен без проверки подписи для получения payload
+        # Декодируем без проверки подписи для получения payload
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_signature": False})
-
-        logger.info(f"Token decoded: type={payload.get('type')}, sub={payload.get('sub')}")
 
         jti = payload.get("jti")
         exp = payload.get("exp")
@@ -122,13 +120,23 @@ async def decode_token(token: str) -> Dict[str, Any]:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Проверка черного списка с дополнительными условиями
+        # Проверка черного списка
         if jti:
             in_blacklist = await redis_client.exists(f"blacklist:{jti}")
             logger.info(f"Blacklist check - JTI: {jti}, In blacklist: {in_blacklist}")
 
             if in_blacklist:
                 logger.warning(f"Token {jti} found in blacklist")
+
+                # Дополнительная проверка времени жизни токена в черном списке
+                blacklist_ttl = await redis_client.ttl(f"blacklist:{jti}")
+                logger.info(f"Blacklist TTL for {jti}: {blacklist_ttl}")
+
+                # Если TTL менее 60 секунд, считаем токен устаревшим
+                if blacklist_ttl < 60:
+                    logger.info(f"Token {jti} blacklist TTL is too short, allowing token")
+                    return payload
+
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Token has been revoked",
@@ -158,24 +166,25 @@ async def decode_token(token: str) -> Dict[str, Any]:
 # Функция для отзыва токена (добавление в черный список)
 async def revoke_token(token: str):
     try:
+        # Декодируем без проверки подписи
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_signature": False})
         jti = payload.get("jti")
         exp = payload.get("exp")
         now = datetime.now(timezone.utc).timestamp()
 
-        # Проверяем, не истек ли токен до момента ревокации
+        # Проверяем, что токен еще не полностью истек
         if not exp or now > exp:
             logger.info(f"Token {jti} already expired, skipping revocation")
             return False
 
-        # Устанавливаем TTL только на неистекшие токены
-        ttl = max(1, int(exp - now))
-
-        # Добавляем дополнительную проверку перед ревокацией
+        # Проверяем, не находится ли токен уже в черном списке
         existing_blacklist = await redis_client.exists(f"blacklist:{jti}")
         if existing_blacklist:
             logger.info(f"Token {jti} already in blacklist, skipping")
             return False
+
+        # Устанавливаем TTL с некоторым запасом
+        ttl = max(1, int(exp - now) + 60)  # Добавляем минутный запас
 
         logger.info(f"Revoking token: JTI={jti}, TTL={ttl}")
         await redis_client.setex(f"blacklist:{jti}", ttl, "1")
