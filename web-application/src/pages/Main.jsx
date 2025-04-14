@@ -1,12 +1,12 @@
-import React, { useState, useEffect, use } from "react";
-import { Table, Empty, Typography, Space, Button } from "antd";
+import React, { useState, useEffect } from "react";
+import { Table, Empty, Typography, Space, Button, Spin } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import ProfileMenu from "../components/ProfileMenu";
 import AddProject from "../components/AddProject";
 import { getProjects, getMe } from "../api";
 import { useDispatch, useSelector } from "react-redux";
-import { setUserData, setUserError } from "../store/userSlice";
+import { setUserData } from "../store/userSlice";
 import "../styles/Main.css";
 
 const { Title, Text } = Typography;
@@ -15,24 +15,27 @@ const Main = () => {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pagination, setPagination] = useState({
+    current: 1,
+    pageSize: 10,
+    showSizeChanger: true,
+    pageSizeOptions: ['10', '20', '50'],
+  });
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const user = useSelector((state) => state.user.data);
-  // Загрузка проектов при монтировании компонента
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const userResponse = await getMe();
-        dispatch(setUserData(userResponse.data));
+        const [userResponse, projectsResponse] = await Promise.all([
+          getMe(),
+          getProjects()
+        ]);
 
-        const projectsResponse = await getProjects();
-        // Защита от не-массивов и undefined
-        const safeProjects = Array.isArray(projectsResponse?.data)
-          ? projectsResponse.data
-          : [];
-        setProjects(safeProjects);
+        dispatch(setUserData(userResponse.data));
+        setProjects(Array.isArray(projectsResponse?.data) ? projectsResponse.data : []);
       } catch (error) {
         console.error("Error fetching data:", error);
       } finally {
@@ -45,12 +48,10 @@ const Main = () => {
   const handleAddProjectClick = () => setIsModalVisible(true);
   const handleModalCancel = () => setIsModalVisible(false);
 
-  // Обновление списка после добавления проекта
   const handleAddProject = async () => {
     try {
-      const accessToken = localStorage.getItem("access_token");
-      const response = await getProjects(accessToken);
-      setProjects(response.data);
+      const response = await getProjects();
+      setProjects(response.data || []);
       setIsModalVisible(false);
     } catch (error) {
       console.error("Error refreshing projects:", error);
@@ -61,12 +62,38 @@ const Main = () => {
     {
       title: "№",
       key: "index",
-      render: (_, __, index) => index + 1,
+      render: (_, __, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
+      width: 60,
+      align: 'center',
     },
-    { title: "Project Name", dataIndex: "name", key: "name" },
-    { title: "Description", dataIndex: "description", key: "description" },
-    { title: "Users", dataIndex: "user_count", key: "user_count" },
+    {
+      title: "Project Name",
+      dataIndex: "name",
+      key: "name",
+      sorter: (a, b) => a.name.localeCompare(b.name),
+    },
+    {
+      title: "Description",
+      dataIndex: "description",
+      key: "description",
+      ellipsis: true,
+    },
+    {
+      title: "Users",
+      dataIndex: "user_count",
+      key: "user_count",
+      sorter: (a, b) => a.user_count - b.user_count,
+      width: 100,
+      align: 'center',
+    },
   ];
+
+  const handleTableChange = (newPagination) => {
+    setPagination({
+      ...pagination,
+      ...newPagination,
+    });
+  };
 
   return (
     <div className="page-container">
@@ -83,6 +110,7 @@ const Main = () => {
             </Space>
           </Space>
         </div>
+
         <div style={{ textAlign: "right", marginBottom: 16 }}>
           <Button
             type="primary"
@@ -94,23 +122,21 @@ const Main = () => {
         </div>
 
         <div className="projects-container">
-          {loading ? (
-            <div className="loading-container">Loading projects...</div>
-          ) : projects.length > 0 ? (
-            <Table
-              dataSource={projects}
-              columns={columns}
-              rowKey="id"
-              pagination={false}
-              onRow={(record) => ({
-                onClick: () => navigate(`/project/${record.id}`),
-              })}
-            />
-          ) : (
-            <div className="empty-container">
-              <Empty description="No Projects Found" />
-            </div>
-          )}
+          <Table
+            columns={columns}
+            dataSource={projects}
+            rowKey="id"
+            pagination={pagination}
+            onChange={handleTableChange}
+            loading={loading}
+            locale={{
+              emptyText: loading ? <Spin tip="Loading..." /> : <Empty description="No Projects Found" />
+            }}
+            onRow={(record) => ({
+              onClick: () => navigate(`/project/${record.id}`),
+              style: { cursor: 'pointer' }
+            })}
+          />
         </div>
 
         <AddProject
