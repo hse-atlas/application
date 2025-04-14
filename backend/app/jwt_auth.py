@@ -523,55 +523,95 @@ async def get_current_user(
         token: str = Depends(oauth2_scheme),
         db: AsyncSession = Depends(get_async_session)
 ):
+    logger.info(f"[DEBUG] get_current_user начал выполнение")
+    logger.info(f"[DEBUG] token: {token[:10]}... (первые 10 символов)")
+
     try:
         payload = await decode_token(token)
+        logger.info(f"[DEBUG] token payload: {payload}")
 
         user_id = payload.get("sub")
         if user_id is None:
+            logger.error("[DEBUG] Token не содержит 'sub' поле")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Проверяем, является ли пользователь администратором
+        logger.info(f"[DEBUG] Ищем администратора с ID: {user_id}")
         admin_result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
         admin = admin_result.scalar_one_or_none()
 
         if admin:
+            logger.info(f"[DEBUG] Найден администратор: id={admin.id}, email={admin.email}")
             return {"user": admin, "type": "admin"}
 
-        # Если не администратор, проверяем обычного пользователя
+        logger.info(f"[DEBUG] Администратор не найден, ищем обычного пользователя с ID: {user_id}")
         user_result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
         user = user_result.scalar_one_or_none()
 
         if user:
+            logger.info(f"[DEBUG] Найден пользователь: id={user.id}, email={user.email}")
             return {"user": user, "type": "user"}
 
+        logger.error(f"[DEBUG] Пользователь с ID {user_id} не найден ни среди админов, ни среди пользователей")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    except JWTError:
+    except JWTError as e:
+        logger.error(f"[DEBUG] JWTError в get_current_user: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    except Exception as e:
+        logger.error(f"[DEBUG] Неожиданная ошибка в get_current_user: {str(e)}")
+        logger.error(f"[DEBUG] Traceback: ", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving user: {str(e)}",
+        )
 
 
 # Получение только администратора
 async def get_current_admin(current_user=Depends(get_current_user)):
-    logger.info(f"Checking if user is admin: {current_user}")
+    logger.info(f"[DEBUG] get_current_admin начал выполнение")
+    logger.info(f"[DEBUG] current_user: {current_user}")
+
+    if not current_user:
+        logger.error("[DEBUG] current_user пустой (None)")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+
+    if "type" not in current_user:
+        logger.error(f"[DEBUG] current_user не содержит поле 'type': {current_user}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Malformed user data",
+        )
+
     if current_user["type"] != "admin":
-        logger.warning(f"User {current_user['user'].id} is not an admin")
+        logger.warning(f"[DEBUG] User {current_user.get('user', {}).get('id', 'unknown')} is not an admin")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions",
         )
-    logger.info(f"User confirmed as admin: {current_user['user'].id}")
+
+    if "user" not in current_user:
+        logger.error(f"[DEBUG] current_user не содержит поле 'user': {current_user}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Malformed user data",
+        )
+
+    logger.info(f"[DEBUG] User confirmed as admin: {current_user['user'].id}")
     return current_user["user"]
 
 

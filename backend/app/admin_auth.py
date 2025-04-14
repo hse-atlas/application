@@ -167,19 +167,45 @@ async def get_admin_profile(
     Получение данных администратора
     Требует валидного JWT токена администратора
     """
-    logger.info(f"Admin profile request processing: id={admin.id}, email={admin.email}")
+    logger.info(f"[DEBUG] get_admin_profile начал выполнение")
 
     try:
+        logger.info(f"[DEBUG] Admin получен через Depends: id={admin.id if admin else 'None'}, "
+                    f"login={admin.login if admin and hasattr(admin, 'login') else 'None'}, "
+                    f"email={admin.email if admin and hasattr(admin, 'email') else 'None'}")
+
+        # Проверяем, что admin не None
+        if not admin:
+            logger.error("[DEBUG] admin объект пустой (None)")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Admin not found"
+            )
+
+        # Проверяем наличие необходимых атрибутов
+        if not hasattr(admin, 'login') or not hasattr(admin, 'email'):
+            logger.error(f"[DEBUG] admin объект неполный: {dir(admin)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Admin object is malformed"
+            )
+
         response_data = {
             "login": admin.login,
             "email": admin.email,
             "user_role": "admin"
         }
-        logger.info(f"Admin profile response prepared: {response_data}")
+
+        logger.info(f"[DEBUG] Подготовлен ответ: {response_data}")
         return response_data
+    except HTTPException as http_exc:
+        logger.error(f"[DEBUG] HTTPException в get_admin_profile: {http_exc.detail}")
+        raise http_exc
     except Exception as e:
-        logger.error(f"Error in get_admin_profile: {str(e)}")
+        logger.error(f"[DEBUG] Неожиданная ошибка в get_admin_profile: {str(e)}")
+        logger.error(f"[DEBUG] Тип исключения: {type(e).__name__}")
+        logger.error(f"[DEBUG] Traceback: ", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error retrieving admin profile"
+            detail=f"Error retrieving admin profile: {str(e)}"
         )
