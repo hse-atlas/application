@@ -110,32 +110,32 @@ async def decode_token(token: str) -> Dict[str, Any]:
 
         # Проверяем, что токен не в черном списке
         jti = payload.get("jti")
+        exp = payload.get("exp")
+        now = datetime.now(timezone.utc).timestamp()
+
         if jti:
-            in_blacklist = await redis_client.exists(f"blacklist:{jti}")
-            logger.info(f"Checking if token is in blacklist. JTI: {jti}, In blacklist: {in_blacklist}")
-            if in_blacklist:
-                logger.warning(f"Token with JTI {jti} has been revoked")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Token has been revoked",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-        else:
-            logger.warning("Token has no JTI claim")
+            # Проверяем черный список только для неистекших токенов
+            if exp and now <= exp:
+                in_blacklist = await redis_client.exists(f"blacklist:{jti}")
+                logger.info(f"Checking blacklist. JTI: {jti}, In blacklist: {in_blacklist}")
+
+                if in_blacklist:
+                    logger.warning(f"Token {jti} has been revoked")
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Token has been revoked",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+            else:
+                logger.info(f"Token {jti} has expired, skipping blacklist check")
 
         return payload
+
     except JWTError as e:
         logger.error(f"JWT error while decoding token: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except Exception as e:
-        logger.error(f"Unexpected error while decoding token: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Token validation error: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -148,22 +148,24 @@ async def revoke_token(token: str):
         if not jti:
             return False
 
-        # Определяем время жизни токена для установки ttl в Redis
-        # Это оптимизирует размер черного списка - токены удаляются
-        # автоматически после истечения срока
+        # Получаем время истечения токена
         exp = payload.get("exp")
         now = datetime.now(timezone.utc).timestamp()
-        ttl = max(1, int(exp - now)) if exp else 3600  # Минимум 1 секунда или час по умолчанию
 
-        # Добавляем токен в черный список
+        # Проверяем, не истек ли токен
+        if exp and now > exp:
+            logger.info(f"Token {jti} already expired, no need to revoke")
+            return False
+
+        # Устанавливаем TTL только на неистекшие токены
+        ttl = max(1, int(exp - now)) if exp else 3600
+
+        logger.info(f"Revoking token: JTI={jti}, TTL={ttl}")
         await redis_client.setex(f"blacklist:{jti}", ttl, "1")
 
-        # Для refresh токенов - удаляем их из списка активных
-        if payload.get("type") == "refresh":
-            await redis_client.delete(f"refresh_token:{jti}")
-
         return True
-    except JWTError:
+    except JWTError as e:
+        logger.error(f"Error revoking token: {str(e)}")
         return False
 
 
