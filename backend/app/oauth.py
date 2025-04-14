@@ -1,8 +1,7 @@
 from urllib.parse import urlencode
+
 from uuid import UUID
 import httpx
-import secrets
-import string
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,11 +12,6 @@ from app.core import add_admin, add_user
 from app.database import async_session_maker
 from app.jwt_auth import create_access_token, create_refresh_token
 from app.schemas import AdminsBase, UsersBase
-from app.security import get_password_hash, password_meets_requirements
-
-import logging
-
-logger = logging.getLogger('oauth')
 
 router = APIRouter(prefix='/api/auth/oauth', tags=['OAuth Authentication'])
 
@@ -33,20 +27,18 @@ async def get_async_session() -> AsyncSession:
 # Начало OAuth процесса для администраторов
 @router.get("/admin/{provider}")
 async def admin_oauth_login(provider: str, request: Request):
-    logger.info(f"Starting OAuth login for admin with provider: {provider}")
-
     if provider not in OAUTH_PROVIDERS:
-        logger.warning(f"Unsupported OAuth provider: {provider}")
         raise HTTPException(status_code=404, detail=f"OAuth provider {provider} not supported")
 
     provider_config = OAUTH_PROVIDERS[provider]
 
     # Создаем state для защиты от CSRF
+    import secrets
     state = secrets.token_urlsafe(16)
     request.session["oauth_state"] = state
     request.session["user_type"] = "admin"
 
-    # Формируем параметры для URL авторизации
+    # Формируем URL авторизации
     params = {
         "client_id": provider_config["client_id"],
         "redirect_uri": provider_config["redirect_uri"],
@@ -60,45 +52,101 @@ async def admin_oauth_login(provider: str, request: Request):
         params["v"] = provider_config["v"]
 
     auth_url = f"{provider_config['authorize_url']}?{urlencode(params)}"
-    logger.info(f"Generated OAuth authorization URL for {provider}")
+    return RedirectResponse(auth_url)
+
+
+# Начало OAuth процесса для пользователей проекта
+@router.get("/user/{provider}/{project_id}")
+async def user_oauth_login(
+        provider: str,
+        project_id: UUID,
+        request: Request,
+        session: AsyncSession = Depends(get_async_session)):
+    if provider not in OAUTH_PROVIDERS:
+        raise HTTPException(status_code=404, detail=f"OAuth provider {provider} not supported")
+
+    # Проверяем существование проекта
+    from sqlalchemy.future import select
+    from app.schemas import ProjectsBase
+
+    project_result = await session.execute(select(ProjectsBase).where(ProjectsBase.id == project_id))
+    project = project_result.scalar_one_or_none()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Проверяем, включен ли OAuth для проекта
+    if not project.oauth_enabled:
+        raise HTTPException(status_code=403, detail="OAuth authentication is not enabled for this project")
+
+    # Проверяем, настроен ли запрашиваемый провайдер для проекта
+    if project.oauth_providers and provider in project.oauth_providers:
+        provider_config = project.oauth_providers[provider]
+        if not provider_config.get("enabled", False):
+            raise HTTPException(status_code=403, detail=f"{provider} authentication is not enabled for this project")
+
+    provider_config = OAUTH_PROVIDERS[provider]
+
+    # Создаем state для защиты от CSRF и сохраняем project_id
+    import secrets
+    state = secrets.token_urlsafe(16)
+    request.session["oauth_state"] = state
+    request.session["user_type"] = "user"
+    request.session["project_id"] = project_id
+
+    # Формируем URL авторизации
+    params = {
+        "client_id": provider_config["client_id"],
+        "redirect_uri": provider_config["redirect_uri"],
+        "scope": provider_config["scope"],
+        "response_type": "code",
+        "state": state
+    }
+
+    # Для VK добавляем версию API
+    if provider == "vk":
+        params["v"] = provider_config["v"]
+
+    auth_url = f"{provider_config['authorize_url']}?{urlencode(params)}"
     return RedirectResponse(auth_url)
 
 
 # Обработчик для callback от Google
 @router.get("/google/callback")
 async def google_callback(request: Request, code: str, state: str, session: AsyncSession = Depends(get_async_session)):
-    logger.info("Processing Google OAuth callback")
     return await process_oauth_callback("google", code, state, request, session)
 
 
 # Обработчик для callback от GitHub
 @router.get("/github/callback")
 async def github_callback(request: Request, code: str, state: str, session: AsyncSession = Depends(get_async_session)):
-    logger.info("Processing GitHub OAuth callback")
     return await process_oauth_callback("github", code, state, request, session)
 
 
 # Обработчик для callback от Yandex
 @router.get("/yandex/callback")
 async def yandex_callback(request: Request, code: str, state: str, session: AsyncSession = Depends(get_async_session)):
-    logger.info("Processing Yandex OAuth callback")
     return await process_oauth_callback("yandex", code, state, request, session)
 
 
 # Обработчик для callback от VK
 @router.get("/vk/callback")
 async def vk_callback(request: Request, code: str, state: str, session: AsyncSession = Depends(get_async_session)):
-    logger.info("Processing VK OAuth callback")
     return await process_oauth_callback("vk", code, state, request, session)
 
 
 # Общая функция для обработки callback от OAuth провайдеров
 async def process_oauth_callback(provider: str, code: str, state: str, request: Request, session: AsyncSession):
-    logger.info(f"Starting OAuth callback processing for {provider}")
+    # Добавляем логирование в начале функции
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"OAuth callback started for provider: {provider}")
+    logger.info(f"State from session: {request.session.get('oauth_state')}, Received state: {state}")
 
     # Проверка state для защиты от CSRF
     if state != request.session.get("oauth_state"):
-        logger.error(f"Invalid state parameter for {provider}")
+        logger.error(
+            f"Invalid state parameter. Session state: {request.session.get('oauth_state')}, Received state: {state}")
         raise HTTPException(status_code=400, detail="Invalid state parameter")
 
     provider_config = OAUTH_PROVIDERS[provider]
@@ -117,7 +165,7 @@ async def process_oauth_callback(provider: str, code: str, state: str, request: 
     headers = {"Accept": "application/json"}
     async with httpx.AsyncClient() as client:
         logger.info(f"Exchanging code for token with URL: {provider_config['token_url']}")
-        response = await client.post(provider_config['token_url'], data=token_data, headers=headers)
+        response = await client.post(provider_config["token_url"], data=token_data, headers=headers)
         logger.info(f"Token response status: {response.status_code}")
 
         if response.status_code != 200:
@@ -125,14 +173,18 @@ async def process_oauth_callback(provider: str, code: str, state: str, request: 
             raise HTTPException(status_code=400,
                                 detail=f"Failed to obtain access token. Provider response: {response.text}")
 
-        # Обработка токена в зависимости от провайдера
         if provider == "github" and response.headers.get("content-type") == "application/x-www-form-urlencoded":
+            # GitHub может вернуть данные в формате x-www-form-urlencoded
             from urllib.parse import parse_qs
             token_response = parse_qs(response.text)
             access_token = token_response.get("access_token", [""])[0]
+            logger.info(
+                f"GitHub token parsed from form data, token starts with: {access_token[:10] if access_token else 'None'}")
         else:
             token_response = response.json()
             access_token = token_response.get("access_token")
+            logger.info(
+                f"Token received from provider, token starts with: {access_token[:10] if access_token else 'None'}")
 
         if not access_token:
             logger.error(f"Access token not found in response: {token_response}")
@@ -141,7 +193,7 @@ async def process_oauth_callback(provider: str, code: str, state: str, request: 
         # Получение информации о пользователе
         user_info_headers = {"Authorization": f"Bearer {access_token}"}
 
-        # Особая обработка для VK
+        # Для VK добавляем дополнительные параметры
         user_info_params = {}
         if provider == "vk":
             user_info_params = {
@@ -149,11 +201,11 @@ async def process_oauth_callback(provider: str, code: str, state: str, request: 
                 "access_token": access_token,
                 "v": provider_config["v"]
             }
-            user_info_headers = {}
+            user_info_headers = {}  # VK не использует Authorization header
 
         logger.info(f"Getting user info from URL: {provider_config['userinfo_url']}")
         user_info_response = await client.get(
-            provider_config['userinfo_url'],
+            provider_config["userinfo_url"],
             params=user_info_params,
             headers=user_info_headers
         )
@@ -168,19 +220,21 @@ async def process_oauth_callback(provider: str, code: str, state: str, request: 
         user_info = user_info_response.json()
         logger.info(f"User info received: {user_info}")
 
-        # Извлечение email и имени
+        # Извлечение email и имени из разных провайдеров
         email, name = extract_user_info(provider, user_info, token_response)
         logger.info(f"Extracted user info: email={email}, name={name}")
 
         if user_type == "admin":
+            # Регистрация или авторизация администратора
+            logger.info(f"Processing admin OAuth with email={email}, provider={provider}")
             response = await process_admin_oauth(email, name, provider, user_info.get("id"), session)
         else:
-            # Получаем project_id из сессии
+            # Регистрация или авторизация пользователя
             project_id = request.session.get("project_id")
             if not project_id:
                 logger.error("Missing project_id in session")
                 raise HTTPException(status_code=400, detail="Missing project_id")
-
+            logger.info(f"Processing user OAuth with email={email}, provider={provider}, project_id={project_id}")
             response = await process_user_oauth(email, name, provider, user_info.get("id"), int(project_id), session)
 
         # Очистка сессии
@@ -201,6 +255,7 @@ def extract_user_info(provider: str, user_info, token_response=None):
         name = user_info.get("name") or user_info.get("given_name", "")
     elif provider == "github":
         email = user_info.get("email")
+        # Если email не вернулся в основном запросе, нужно делать дополнительный запрос к emails API
         name = user_info.get("login") or user_info.get("name", "")
     elif provider == "yandex":
         email = user_info.get("default_email")
@@ -227,6 +282,9 @@ def extract_user_info(provider: str, user_info, token_response=None):
 # Обработка OAuth для администраторов
 async def process_admin_oauth(email: str, name: str, provider: str, provider_user_id: str, session: AsyncSession):
     from sqlalchemy import select
+    import logging
+    logger = logging.getLogger(__name__)
+
     logger.info(f"Processing admin OAuth for email={email}, provider={provider}")
 
     # Проверяем, существует ли уже администратор с таким email
@@ -235,15 +293,17 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
 
     if not admin:
         logger.info(f"Admin with email {email} not found, creating new admin")
-
-        # Генерируем случайный пароль для OAuth-пользователя
+        # Создаем нового администратора
+        import secrets
+        import string
+        # Генерируем случайный пароль, который пользователь не будет использовать (OAuth аутентификация)
         password_chars = string.ascii_letters + string.digits + string.punctuation
         random_password = ''.join(secrets.choice(password_chars) for _ in range(16))
 
         # Используем часть email как логин, если имя не определено
         login = name if name else email.split('@')[0]
 
-        # Проверка уникальности логина
+        # Добавляем уникальный суффикс к логину, если нужно
         from app.core import find_one_or_none_admin
         from app.security import get_password_hash
         existing_login = await find_one_or_none_admin(login=login)
@@ -272,13 +332,12 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
     else:
         logger.info(f"Admin already exists with ID: {admin.id}, provider: {admin.oauth_provider}")
 
-    # Создаем JWT токены с использованием стандартного механизма
+    # Создаем JWT токены
     logger.info(f"Creating JWT tokens for admin ID: {admin.id}")
     access_token = await create_access_token({"sub": str(admin.id)})
     refresh_token = await create_refresh_token({"sub": str(admin.id)})
-
     logger.info(
-        f"Tokens created - Access token JTI: {access_token.get('jti')}, Refresh token JTI: {refresh_token.get('jti')}")
+        f"Tokens created - Access token starts with: {access_token[:10]}, Refresh token starts with: {refresh_token[:10]}")
 
     # Обновляем last_login
     admin.last_login = datetime.now()
@@ -310,46 +369,41 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
     return response
 
 
-# Обработка OAuth для пользователей проекта
+# Обработка OAuth для пользователей
 async def process_user_oauth(email: str, name: str, provider: str, provider_user_id: str, project_id: int,
                              session: AsyncSession):
     from sqlalchemy import select
-    logger.info(f"Processing user OAuth for email={email}, project_id={project_id}")
 
-    # Проверяем существование проекта
+    # Проверяем, существует ли проект
     from app.schemas import ProjectsBase
     result = await session.execute(select(ProjectsBase).where(ProjectsBase.id == project_id))
     project = result.scalar_one_or_none()
 
     if not project:
-        logger.error(f"Project with ID {project_id} not found")
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Проверяем существование пользователя в проекте
+    # Проверяем, существует ли уже пользователь с таким email в данном проекте
     result = await session.execute(
-        select(UsersBase).where(
-            UsersBase.email == email,
-            UsersBase.project_id == str(project_id)
-        )
+        select(UsersBase).where(UsersBase.email == email, UsersBase.project_id == project_id)
     )
     user = result.scalar_one_or_none()
 
     if not user:
-        logger.info(f"User with email {email} not found in project, creating new user")
-
-        # Генерируем случайный пароль для OAuth-пользователя
+        # Создаем нового пользователя
+        import secrets
+        import string
+        # Генерируем случайный пароль, который пользователь не будет использовать (OAuth аутентификация)
         password_chars = string.ascii_letters + string.digits + string.punctuation
         random_password = ''.join(secrets.choice(password_chars) for _ in range(16))
 
         # Используем часть email как логин, если имя не определено
         login = name if name else email.split('@')[0]
 
-        # Проверка уникальности логина в рамках проекта
+        # Добавляем уникальный суффикс к логину, если нужно
         from app.core import find_one_or_none_user
         from app.security import get_password_hash
-        existing_login = await find_one_or_none_user(login=login, project_id=str(project_id))
+        existing_login = await find_one_or_none_user(login=login, project_id=project_id)
         if existing_login:
-            logger.info(f"Login {login} already exists, generating unique suffix")
             login = f"{login}_{secrets.token_hex(4)}"
 
         hashed_password = get_password_hash(random_password)
@@ -357,37 +411,28 @@ async def process_user_oauth(email: str, name: str, provider: str, provider_user
             "email": email,
             "login": login,
             "password": hashed_password,
-            "project_id": str(project_id),
+            "project_id": project_id,
             "oauth_provider": provider,
             "oauth_user_id": provider_user_id
         }
 
-        logger.info(f"Creating new user with data: {user_data}")
         user = await add_user(**user_data)
-        logger.info(f"New user created with ID: {user.id}")
     elif not user.oauth_provider:
         # Если пользователь существует, но без OAuth, обновляем данные
-        logger.info(f"User exists but without OAuth, updating OAuth data for user ID: {user.id}")
         user.oauth_provider = provider
         user.oauth_user_id = provider_user_id
         await session.commit()
-    else:
-        logger.info(f"User already exists with ID: {user.id}, provider: {user.oauth_provider}")
 
-    # Создаем JWT токены с использованием стандартного механизма
-    logger.info(f"Creating JWT tokens for user ID: {user.id}")
+    # Создаем JWT токен
     access_token = await create_access_token({"sub": str(user.id)})
     refresh_token = await create_refresh_token({"sub": str(user.id)})
 
-    logger.info(
-        f"Tokens created - Access token JTI: {access_token.get('jti')}, Refresh token JTI: {refresh_token.get('jti')}")
-
     # Обновляем last_login
+    from datetime import datetime
     user.last_login = datetime.now()
     await session.commit()
-    logger.info(f"Updated last_login for user ID: {user.id}")
 
-    # Создаем ответ с перенаправлением и передаем токены как параметры URL
+    # Редирект на страницу приложения/проекта с передачей токенов в URL
     response = RedirectResponse(url=f"/projects/{project_id}?access_token={access_token}&refresh_token={refresh_token}")
 
     # Устанавливаем токены в cookie
@@ -405,8 +450,5 @@ async def process_user_oauth(email: str, name: str, provider: str, provider_user
         secure=True,
         samesite="strict"
     )
-
-    logger.info("Setting cookies with tokens")
-    logger.info("OAuth authentication successful, redirecting to project page")
 
     return response
