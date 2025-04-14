@@ -11,22 +11,41 @@ import UserLoginEmbed from "./components/UserLoginEmbed";
 import UserRegisterEmbed from "./components/UserRegisterEmbed";
 import tokenRefreshService from "./services/tokenRefreshService";
 
-function AppContent() {  // <-- Новый компонент внутри Router
+function AppContent() {  // <-- Компонент внутри Router
   const location = useLocation();
 
   useEffect(() => {
-    const isEmbedPage = location.pathname.startsWith('/embed/login/') ||
-      location.pathname.startsWith('/embed/register/');
+    // Проверка параметров URL
+    const params = new URLSearchParams(location.search);
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
 
-    const accessToken = localStorage.getItem("access_token");
-    if (accessToken && !isEmbedPage) {
+    if (accessToken && refreshToken) {
+      // Сохранение токенов в localStorage
+      localStorage.setItem('access_token', accessToken);
+      localStorage.setItem('refresh_token', refreshToken);
+
+      // Удаление параметров из URL (чтобы они не остались в истории)
+      const cleanUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+
+      // Запуск сервиса обновления токенов
       tokenRefreshService.start();
+    } else {
+      // Проверка наличия токена в localStorage для запуска сервиса обновления
+      const isEmbedPage = location.pathname.startsWith('/embed/login/') ||
+        location.pathname.startsWith('/embed/register/');
+
+      const storedAccessToken = localStorage.getItem("access_token");
+      if (storedAccessToken && !isEmbedPage) {
+        tokenRefreshService.start();
+      }
     }
 
     return () => {
       tokenRefreshService.stop();
     };
-  }, [location.pathname]);
+  }, [location.pathname, location.search]); // Добавлен location.search для отслеживания параметров
 
   return (
     <Routes>

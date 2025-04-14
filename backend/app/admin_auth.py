@@ -160,25 +160,14 @@ async def admin_auth(
 
 
 @router.get("/me", response_model=AdminProfileResponse)
-async def get_admin_profile(request: Request, db: AsyncSession = Depends(get_async_session)):
+async def get_admin_profile(
+        admin: AdminsBase = Depends(get_current_admin)
+):
     """
     Получение данных администратора
     Требует валидного JWT токена администратора
     """
-    # Получаем данные пользователя напрямую из request.state
-    if not hasattr(request.state, "user") or not request.state.user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated"
-        )
-
-    admin = request.state.user
-
-    if not admin or getattr(request.state, "user_type", None) != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions"
-        )
+    logger.info(f"Admin profile request processing: id={admin.id}, email={admin.email}")
 
     try:
         response_data = {
@@ -186,6 +175,7 @@ async def get_admin_profile(request: Request, db: AsyncSession = Depends(get_asy
             "email": admin.email,
             "user_role": "admin"
         }
+        logger.info(f"Admin profile response prepared: {response_data}")
         return response_data
     except Exception as e:
         logger.error(f"Error in get_admin_profile: {str(e)}")

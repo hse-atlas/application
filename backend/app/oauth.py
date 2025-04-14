@@ -332,7 +332,7 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
     else:
         logger.info(f"Admin already exists with ID: {admin.id}, provider: {admin.oauth_provider}")
 
-    # Создаем JWT токен
+    # Создаем JWT токены
     logger.info(f"Creating JWT tokens for admin ID: {admin.id}")
     access_token = await create_access_token({"sub": str(admin.id)})
     refresh_token = await create_refresh_token({"sub": str(admin.id)})
@@ -344,11 +344,26 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
     await session.commit()
     logger.info(f"Updated last_login for admin ID: {admin.id}")
 
-    # Создаем ответ с редиректом
-    response = RedirectResponse(url="/")  # Редирект на дашборд
+    # Создаем ответ с перенаправлением и передаем токены как параметры URL
+    response = RedirectResponse(url=f"/?access_token={access_token}&refresh_token={refresh_token}")
+
+    # Устанавливаем токены в cookie
+    response.set_cookie(
+        key="admins_access_token",
+        value=access_token,
+        httponly=True,
+        secure=True,
+        samesite="strict"
+    )
+    response.set_cookie(
+        key="admins_refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="strict"
+    )
+
     logger.info("Setting cookies with tokens")
-    response.set_cookie(key="admins_access_token", value=access_token, httponly=True, secure=True, samesite="strict")
-    response.set_cookie(key="admins_refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict")
     logger.info("OAuth authentication successful, redirecting to dashboard")
 
     return response
@@ -417,9 +432,23 @@ async def process_user_oauth(email: str, name: str, provider: str, provider_user
     user.last_login = datetime.now()
     await session.commit()
 
-    # Редирект на страницу приложения/проекта
-    response = RedirectResponse(url=f"/projects/{project_id}")
-    response.set_cookie(key="users_access_token", value=access_token, httponly=True, secure=True, samesite="strict")
-    response.set_cookie(key="users_refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict")
+    # Редирект на страницу приложения/проекта с передачей токенов в URL
+    response = RedirectResponse(url=f"/projects/{project_id}?access_token={access_token}&refresh_token={refresh_token}")
+
+    # Устанавливаем токены в cookie
+    response.set_cookie(
+        key="users_access_token",
+        value=access_token,
+        httponly=True,
+        secure=True,
+        samesite="strict"
+    )
+    response.set_cookie(
+        key="users_refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="strict"
+    )
 
     return response
