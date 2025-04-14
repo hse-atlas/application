@@ -11,38 +11,41 @@ import UserLoginEmbed from "./components/UserLoginEmbed";
 import UserRegisterEmbed from "./components/UserRegisterEmbed";
 import tokenRefreshService from "./services/tokenRefreshService";
 
-function App() {
+function AppContent() {  // <-- Новый компонент внутри Router
   const location = useLocation();
 
   useEffect(() => {
-    // Проверяем, не находимся ли мы на embed-страницах
     const isEmbedPage = location.pathname.startsWith('/embed/login/') ||
       location.pathname.startsWith('/embed/register/');
 
-    // Запускаем сервис обновления токенов только если не на embed-странице и есть токен
     const accessToken = localStorage.getItem("access_token");
     if (accessToken && !isEmbedPage) {
       tokenRefreshService.start();
     }
 
-    // Очищаем при размонтировании компонента
     return () => {
       tokenRefreshService.stop();
     };
-  }, [location.pathname]); // Зависимость от pathname для перезапуска эффекта при смене пути
+  }, [location.pathname]);
 
   return (
+    <Routes>
+      <Route path="/" element={<Main />} />
+      <Route path="/project/:id" element={<ProjectDetails />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="/profile" element={<Profile />} />
+      <Route path="/settings" element={<ProfileSettings />} />
+      <Route path="/embed/login/:id" element={<UserLoginEmbed />} />
+      <Route path="/embed/register/:id" element={<UserRegisterEmbed />} />
+    </Routes>
+  );
+}
+
+function App() {
+  return (
     <Router>
-      <Routes>
-        <Route path="/" element={<Main />} />
-        <Route path="/project/:id" element={<ProjectDetails />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/profile" element={<Profile />} />
-        <Route path="/settings" element={<ProfileSettings />} />
-        <Route path="/embed/login/:id" element={<UserLoginEmbed />} />
-        <Route path="/embed/register/:id" element={<UserRegisterEmbed />} />
-      </Routes>
+      <AppContent />  {/* Теперь useLocation работает корректно */}
     </Router>
   );
 }
