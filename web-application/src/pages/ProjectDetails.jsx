@@ -330,17 +330,16 @@ const ProjectDetails = () => {
           Users
         </Title>
         <div className="projects-container">
-          {users.length > 0 ? (
-            <Table
-              dataSource={users}
-              columns={columns}
-              rowKey="id"
-              pagination={false}
-              bordered
-            />
-          ) : (
-            <Empty description="No users in project" />
-          )}
+          <Table
+            dataSource={users}
+            columns={columns}
+            rowKey="id"
+            pagination={false}
+            bordered
+            locale={{
+              emptyText: <Empty description="No users in project" />
+            }}
+          />
         </div>
       </div>
 
@@ -357,5 +356,6 @@ const ProjectDetails = () => {
     </div>
   );
 };
+
 
 export default ProjectDetails;
