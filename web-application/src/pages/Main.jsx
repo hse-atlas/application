@@ -126,8 +126,13 @@ const Main = () => {
             columns={columns}
             dataSource={projects}
             rowKey="id"
-            pagination={pagination}
-            onChange={handleTableChange}
+            pagination={{
+              position: ['bottomCenter'], // Центрируем пагинацию
+              pageSize: 10, // Фиксированное количество строк
+              showSizeChanger: false, // Убираем выбор количества строк
+              showTotal: (total) => `Total ${total} items`, // Опционально: показываем общее количество
+              hideOnSinglePage: true // Скрываем пагинацию, если данных меньше pageSize
+            }}
             loading={loading}
             locale={{
               emptyText: loading ? <Spin tip="Loading..." /> : <Empty description="No Projects Found" />

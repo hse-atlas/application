@@ -334,7 +334,12 @@ const ProjectDetails = () => {
             dataSource={users}
             columns={columns}
             rowKey="id"
-            pagination={false}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: false,
+              hideOnSinglePage: true,
+              position: ['bottomCenter']
+            }}
             bordered
             locale={{
               emptyText: <Empty description="No users in project" />
