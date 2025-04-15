@@ -1,5 +1,6 @@
 import { checkAndRefreshTokenIfNeeded } from '../api';
 import { message } from 'antd';
+import axios from 'axios';
 
 // Интервал проверки токена (в миллисекундах)
 const TOKEN_CHECK_INTERVAL = 60000; // Проверять каждую минуту
