@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { Modal, Form, Input, Button, Space, message, Switch, Tag } from "antd";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { editeProject, isValidUUID } from "../api";
 
 const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
   const [form] = Form.useForm();
+  const { id } = useParams();
   const [oauthEnabled, setOauthEnabled] = useState(false);
   const [oauthProviders, setOauthProviders] = useState({
     google: { enabled: false },
@@ -13,6 +14,7 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
     vk: { enabled: false },
   });
   const [activeProviders, setActiveProviders] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (visible && initialValues) {
@@ -22,11 +24,9 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
         url: initialValues.url
       });
 
-      // Инициализация OAuth состояния
       const oauthEnabled = initialValues.oauth_enabled || false;
       setOauthEnabled(oauthEnabled);
 
-      // Инициализация провайдеров
       const providersFromDB = initialValues.oauth_providers || {};
       const providersState = {
         google: { enabled: providersFromDB.google?.enabled || false },
@@ -59,6 +59,13 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
 
   const handleSave = async () => {
     try {
+      setLoading(true);
+
+      if (!isValidUUID(id)) {
+        message.error("Invalid project ID format");
+        return;
+      }
+
       const values = await form.validateFields();
 
       const requestData = {
@@ -67,11 +74,19 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
         oauth_providers: oauthEnabled ? oauthProviders : null,
       };
 
-      onSave(requestData);
-      onCancel();
+      // Вызываем API для сохранения изменений
+      const response = await editeProject(id, requestData);
+
+      if (response.status === 200) {
+        message.success("Project updated successfully");
+        onSave(response.data); // Обновляем данные в родительском компоненте
+        onCancel();
+      }
     } catch (error) {
-      console.error("Validation error:", error);
-      message.error("Please fill all required fields correctly");
+      console.error("Update error:", error);
+      message.error(error.response?.data?.detail || "Failed to update project");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -145,8 +160,14 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
 
       <div style={{ textAlign: "right", marginTop: "16px" }}>
         <Space>
-          <Button onClick={onCancel}>Cancel</Button>
-          <Button type="primary" onClick={handleSave}>
+          <Button onClick={onCancel} disabled={loading}>
+            Cancel
+          </Button>
+          <Button
+            type="primary"
+            onClick={handleSave}
+            loading={loading}
+          >
             Save Changes
           </Button>
         </Space>
