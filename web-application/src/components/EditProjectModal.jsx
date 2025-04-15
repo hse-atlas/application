@@ -24,21 +24,18 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
       const oauthEnabled = initialValues.oauth_enabled || false;
       setOauthEnabled(oauthEnabled);
 
+      // Инициализируем состояние провайдеров
+      const providersFromDB = initialValues.oauth_providers || {};
       const providersState = {
-        google: { enabled: initialValues.oauth_providers?.google?.enabled || false },
-        github: { enabled: initialValues.oauth_providers?.github?.enabled || false },
-        yandex: { enabled: initialValues.oauth_providers?.yandex?.enabled || false },
-        vk: { enabled: initialValues.oauth_providers?.vk?.enabled || false },
+        google: { enabled: providersFromDB.google?.enabled || false },
+        github: { enabled: providersFromDB.github?.enabled || false },
+        yandex: { enabled: providersFromDB.yandex?.enabled || false },
+        vk: { enabled: providersFromDB.vk?.enabled || false },
       };
       setOauthProviders(providersState);
 
-      // Определяем активные провайдеры для отображения
-      const active = [];
-      if (providersState.google.enabled) active.push("Google");
-      if (providersState.github.enabled) active.push("GitHub");
-      if (providersState.yandex.enabled) active.push("Yandex");
-      if (providersState.vk.enabled) active.push("VK");
-      setActiveProviders(active);
+      // Обновляем список активных провайдеров
+      updateActiveProviders(providersState);
     }
   }, [visible, initialValues, form]);
 
@@ -54,12 +51,7 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
       const requestData = {
         ...values,
         oauth_enabled: oauthEnabled,
-        oauth_providers: {
-          google: oauthProviders.google,
-          github: oauthProviders.github,
-          yandex: oauthProviders.yandex,
-          vk: oauthProviders.vk,
-        },
+        oauth_providers: oauthEnabled ? oauthProviders : null, // Отправляем null, если OAuth выключен
       };
 
       const response = await editeProject(id, requestData);
@@ -138,28 +130,26 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
         </Form.Item>
 
         {oauthEnabled && (
-          <>
-            <div style={{ margin: '16px 0', padding: '16px', border: '1px solid #d9d9d9', borderRadius: '4px' }}>
-              <h4 style={{ marginBottom: '16px' }}>Configure OAuth Providers</h4>
+          <div style={{ margin: '16px 0', padding: '16px', border: '1px solid #d9d9d9', borderRadius: '4px' }}>
+            <h4 style={{ marginBottom: '16px' }}>Configure OAuth Providers</h4>
 
-              {["google", "github", "yandex", "vk"].map((provider) => (
-                <div key={provider} style={{ marginBottom: "16px" }}>
-                  <Form.Item label={`${provider.charAt(0).toUpperCase() + provider.slice(1)} OAuth`}>
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <Switch
-                        checked={oauthProviders[provider].enabled}
-                        onChange={(checked) => handleProviderToggle(provider, checked)}
-                        style={{ marginRight: 8 }}
-                      />
-                      <span>
-                        {oauthProviders[provider].enabled ? 'Enabled' : 'Disabled'}
-                      </span>
-                    </div>
-                  </Form.Item>
-                </div>
-              ))}
-            </div>
-          </>
+            {["google", "github", "yandex", "vk"].map((provider) => (
+              <div key={provider} style={{ marginBottom: "16px" }}>
+                <Form.Item label={`${provider.charAt(0).toUpperCase() + provider.slice(1)} OAuth`}>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <Switch
+                      checked={oauthProviders[provider]?.enabled || false}
+                      onChange={(checked) => handleProviderToggle(provider, checked)}
+                      style={{ marginRight: 8 }}
+                    />
+                    <span>
+                      {oauthProviders[provider]?.enabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </div>
+                </Form.Item>
+              </div>
+            ))}
+          </div>
         )}
       </Form>
 
