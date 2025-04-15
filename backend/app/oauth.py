@@ -258,8 +258,21 @@ def extract_user_info(provider: str, user_info, token_response=None):
         # Если email не вернулся в основном запросе, нужно делать дополнительный запрос к emails API
         name = user_info.get("login") or user_info.get("name", "")
     elif provider == "yandex":
-        email = user_info.get("default_email")
-        name = user_info.get("display_name") or user_info.get("real_name", "")
+        # Явно запрашиваем email из ответа пользователя
+        email = user_info.get('default_email')
+        # Если email не найден, попробуем извлечь из списка emails
+        if not email and 'emails' in user_info:
+            # Берем первый доступный email
+            emails = user_info.get('emails', [])
+            email = emails[0] if emails else None
+
+        # Если по-прежнему нет email, вызываем исключение
+        if not email:
+            raise HTTPException(
+                status_code=400,
+                detail="Unable to retrieve email from Yandex OAuth response"
+            )
+        name = user_info.get('display_name') or user_info.get('real_name', '')
     elif provider == "vk":
         # VK возвращает email в токене, а не в user_info
         email = token_response.get("email") if token_response else None
