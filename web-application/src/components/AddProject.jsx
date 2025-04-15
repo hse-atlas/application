@@ -1,69 +1,43 @@
 import React, { useState } from "react";
-import { Modal, Form, Input, Button, Space, message, Switch } from "antd";
+import { Modal, Form, Input, Button, Space, message, Switch, Tag } from "antd";
 import { addProject } from "../api";
 
 const AddProject = ({ visible, onCancel, onAdd }) => {
   const [form] = Form.useForm();
   const [oauthEnabled, setOauthEnabled] = useState(false);
   const [oauthProviders, setOauthProviders] = useState({
-    // Удалить вводимые поля для oauthProviders
-    // и использовать только checkbox для включения/выключения
-    google: {
-      enabled: false,
-      //client_id: "",
-      //client_secret: "",
-      //redirect_uri: "",
-    },
-    github: {
-      enabled: false,
-      //client_id: "",
-      //client_secret: "",
-      //redirect_uri: "",
-    },
-    yandex: {
-      enabled: false,
-      //client_id: "",
-      //client_secret: "",
-      //redirect_uri: "",
-    },
-    vk: {
-      enabled: false,
-      //client_id: "",
-      //client_secret: "",
-      //redirect_uri: "" 
-    },
+    google: { enabled: false },
+    github: { enabled: false },
+    yandex: { enabled: false },
+    vk: { enabled: false },
   });
+  const [activeProviders, setActiveProviders] = useState([]);
 
   const handleAddProject = async (values) => {
     try {
-
-      // Формируем данные для отправки
       const requestData = {
         name: values.name,
         description: values.description,
-        url: values.URL || null,
+        url: values.url || null,
         oauth_enabled: oauthEnabled,
-        oauth_providers: {
-          google: oauthProviders.google,
-          github: oauthProviders.github,
-          yandex: oauthProviders.yandex,
-          vk: oauthProviders.vk,
-          enabled: oauthEnabled,
-        },
+        oauth_providers: oauthEnabled ? oauthProviders : null,
       };
 
-      // Выводим данные в консоль для отладки
       console.log("Sending data to server:", requestData);
-
-      // Отправляем запрос
       const response = await addProject(requestData);
 
-      // Обработка успешного ответа
       onAdd(response.data);
       form.resetFields();
+      setOauthEnabled(false);
+      setOauthProviders({
+        google: { enabled: false },
+        github: { enabled: false },
+        yandex: { enabled: false },
+        vk: { enabled: false },
+      });
+      setActiveProviders([]);
       message.success("Project added successfully!");
     } catch (error) {
-      // Логирование ошибки
       console.error("Error creating project:", {
         message: error.message,
         response: error.response?.data,
@@ -71,6 +45,24 @@ const AddProject = ({ visible, onCancel, onAdd }) => {
       });
       message.error("Failed to create project.");
     }
+  };
+
+  const updateActiveProviders = (providers) => {
+    const active = [];
+    if (providers.google.enabled) active.push("Google");
+    if (providers.github.enabled) active.push("GitHub");
+    if (providers.yandex.enabled) active.push("Yandex");
+    if (providers.vk.enabled) active.push("VK");
+    setActiveProviders(active);
+  };
+
+  const handleProviderToggle = (provider, checked) => {
+    const newProviders = {
+      ...oauthProviders,
+      [provider]: { ...oauthProviders[provider], enabled: checked },
+    };
+    setOauthProviders(newProviders);
+    updateActiveProviders(newProviders);
   };
 
   return (
@@ -95,107 +87,51 @@ const AddProject = ({ visible, onCancel, onAdd }) => {
           name="description"
           label="Description"
           rules={[
-            {
-              required: true,
-              message: "Please enter the project description!",
-            },
+            { required: true, message: "Please enter the project description!" },
           ]}
         >
           <Input.TextArea placeholder="Enter project description" />
         </Form.Item>
 
-        {/*
-        <Form.Item
-          name="url"
-          label="Project URL"
-          rules={[
-            {
-              type: "url",
-              message: "Please enter a valid URL!",
-            },
-          ]}
-        >
-          <Input placeholder="Enter project URL" />
-        </Form.Item>
-          */}
-        <Form.Item label="Enable OAuth">
-          <Switch
-            checked={oauthEnabled}
-            onChange={(checked) => setOauthEnabled(checked)}
-          />
+        <Form.Item label="OAuth Status">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Switch
+              checked={oauthEnabled}
+              onChange={(checked) => setOauthEnabled(checked)}
+            />
+            <span>{oauthEnabled ? 'Enabled' : 'Disabled'}</span>
+            {oauthEnabled && activeProviders.length > 0 && (
+              <div style={{ marginLeft: 'auto' }}>
+                <span style={{ marginRight: 8 }}>Active providers:</span>
+                {activeProviders.map(provider => (
+                  <Tag color="blue" key={provider}>{provider}</Tag>
+                ))}
+              </div>
+            )}
+          </div>
         </Form.Item>
 
         {oauthEnabled && (
-          <>
+          <div style={{ margin: '16px 0', padding: '16px', border: '1px solid #d9d9d9', borderRadius: '4px' }}>
+            <h4 style={{ marginBottom: '16px' }}>Configure OAuth Providers</h4>
+
             {["google", "github", "yandex", "vk"].map((provider) => (
               <div key={provider} style={{ marginBottom: "16px" }}>
-                <Form.Item label={`Enable ${provider.toUpperCase()}`}>
-                  <Switch
-                    checked={oauthProviders[provider].enabled}
-                    onChange={(checked) =>
-                      setOauthProviders((prev) => ({
-                        ...prev,
-                        [provider]: { ...prev[provider], enabled: checked },
-                      }))
-                    }
-                  />
+                <Form.Item label={`${provider.charAt(0).toUpperCase() + provider.slice(1)} OAuth`}>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <Switch
+                      checked={oauthProviders[provider].enabled}
+                      onChange={(checked) => handleProviderToggle(provider, checked)}
+                      style={{ marginRight: 8 }}
+                    />
+                    <span>
+                      {oauthProviders[provider].enabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </div>
                 </Form.Item>
-
-                {/*
-                {oauthProviders[provider].enabled && (
-                  <>
-                    <Form.Item label={`${provider.toUpperCase()} Client ID`}>
-                      <Input
-                        value={oauthProviders[provider].client_id}
-                        onChange={(e) =>
-                          setOauthProviders((prev) => ({
-                            ...prev,
-                            [provider]: {
-                              ...prev[provider],
-                              client_id: e.target.value,
-                            },
-                          }))
-                        }
-                      />
-                    </Form.Item>
-
-                    <Form.Item
-                      label={`${provider.toUpperCase()} Client Secret`}
-                    >
-                      <Input
-                        value={oauthProviders[provider].client_secret}
-                        onChange={(e) =>
-                          setOauthProviders((prev) => ({
-                            ...prev,
-                            [provider]: {
-                              ...prev[provider],
-                              client_secret: e.target.value,
-                            },
-                          }))
-                        }
-                      />
-                    </Form.Item>
-
-                    <Form.Item label={`${provider.toUpperCase()} Redirect URI`}>
-                      <Input
-                        value={oauthProviders[provider].redirect_uri}
-                        onChange={(e) =>
-                          setOauthProviders((prev) => ({
-                            ...prev,
-                            [provider]: {
-                              ...prev[provider],
-                              redirect_uri: e.target.value,
-                            },
-                          }))
-                        }
-                      />
-                    </Form.Item>    
-                  </>
-                )}
-                */}
               </div>
             ))}
-          </>
+          </div>
         )}
 
         <div style={{ textAlign: "right", marginTop: "16px" }}>
