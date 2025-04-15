@@ -1,22 +1,42 @@
-import React, { useEffect } from "react";
-import { Modal, Form, Input, Button, Space, message } from "antd";
+import React, { useEffect, useState } from "react";
+import { Modal, Form, Input, Button, Space, message, Switch } from "antd";
 import { useNavigate, useParams } from "react-router-dom";
-import { editeProject, isValidUUID } from "../api"; // Импортируем isValidUUID
+import { editeProject, isValidUUID } from "../api";
 
 const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const { id } = useParams();
+  const [oauthEnabled, setOauthEnabled] = useState(false);
+  const [oauthProviders, setOauthProviders] = useState({
+    google: { enabled: false },
+    github: { enabled: false },
+    yandex: { enabled: false },
+    vk: { enabled: false },
+  });
 
   useEffect(() => {
-    if (visible) {
+    if (visible && initialValues) {
       form.setFieldsValue(initialValues);
+
+      // Устанавливаем состояние OAuth из initialValues
+      if (initialValues.oauth_enabled !== undefined) {
+        setOauthEnabled(initialValues.oauth_enabled);
+      }
+
+      if (initialValues.oauth_providers) {
+        setOauthProviders({
+          google: { enabled: initialValues.oauth_providers.google?.enabled || false },
+          github: { enabled: initialValues.oauth_providers.github?.enabled || false },
+          yandex: { enabled: initialValues.oauth_providers.yandex?.enabled || false },
+          vk: { enabled: initialValues.oauth_providers.vk?.enabled || false },
+        });
+      }
     }
   }, [visible, initialValues, form]);
 
   const handleSave = async () => {
     try {
-      // Проверяем, что ID является валидным UUID
       if (!isValidUUID(id)) {
         message.error("Invalid project ID format");
         return;
@@ -24,12 +44,23 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
 
       const values = await form.validateFields();
 
-      // Вызываем API-метод
-      const response = await editeProject(id, values);
+      // Формируем полные данные для отправки
+      const requestData = {
+        ...values,
+        oauth_enabled: oauthEnabled,
+        oauth_providers: {
+          google: oauthProviders.google,
+          github: oauthProviders.github,
+          yandex: oauthProviders.yandex,
+          vk: oauthProviders.vk,
+        },
+      };
+
+      const response = await editeProject(id, requestData);
 
       if (response.status === 200) {
         message.success("Project updated successfully");
-        onSave(response.data); // Передаем обновленные данные
+        onSave(response.data);
         onCancel();
       }
     } catch (error) {
@@ -49,9 +80,7 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
         <Form.Item
           name="name"
           label="Project Name"
-          rules={[
-            { required: true, message: "Please enter the project name!" },
-          ]}
+          rules={[{ required: true, message: "Please enter the project name!" }]}
         >
           <Input placeholder="Enter project name" />
         </Form.Item>
@@ -60,32 +89,38 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
           name="description"
           label="Description"
           rules={[
-            {
-              required: true,
-              message: "Please enter the project description!",
-            },
+            { required: true, message: "Please enter the project description!" },
           ]}
         >
           <Input.TextArea placeholder="Enter project description" />
         </Form.Item>
 
-        {/*
-        <Form.Item
-          name="url"
-          label="Project URL"
-          rules={[
-            {
-              type: "url",
-              message: "Please enter a valid URL!",
-            },
-          ]}
-        >
-          <Input placeholder="Enter project URL" />
+        <Form.Item label="Enable OAuth">
+          <Switch
+            checked={oauthEnabled}
+            onChange={(checked) => setOauthEnabled(checked)}
+          />
         </Form.Item>
-        */}
 
-
-
+        {oauthEnabled && (
+          <>
+            {["google", "github", "yandex", "vk"].map((provider) => (
+              <div key={provider} style={{ marginBottom: "16px" }}>
+                <Form.Item label={`Enable ${provider.toUpperCase()}`}>
+                  <Switch
+                    checked={oauthProviders[provider].enabled}
+                    onChange={(checked) =>
+                      setOauthProviders((prev) => ({
+                        ...prev,
+                        [provider]: { ...prev[provider], enabled: checked },
+                      }))
+                    }
+                  />
+                </Form.Item>
+              </div>
+            ))}
+          </>
+        )}
       </Form>
 
       <div style={{ textAlign: "right", marginTop: "16px" }}>
