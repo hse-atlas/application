@@ -159,9 +159,6 @@ class TokenResponse(BaseModel):
 
 
 class OAuthConfig(BaseModel):
-    client_id: str
-    client_secret: str
-    redirect_uri: str
     enabled: bool = True
 
 
