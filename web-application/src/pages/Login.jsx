@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Form, Input, Button, Typography, message, Divider, Space } from "antd";
 import { useNavigate } from "react-router-dom";
-import { GoogleOutlined } from "@ant-design/icons";
+import { GoogleOutlined, YandexOutlined } from "@ant-design/icons";
 import { login } from "../api";
 import tokenRefreshService from "../services/tokenRefreshService";
 import "../styles/Login.css";
@@ -97,6 +97,10 @@ const Login = () => {
     window.location.href = "/api/auth/oauth/admin/google";
   };
 
+  const handleYandexLogin = () => {
+    window.location.href = "/api/auth/oauth/admin/yandex";
+  };
+
   return (
     <div className="login-page-container">
       <div className="login-container">
@@ -146,14 +150,22 @@ const Login = () => {
 
           <Divider>or</Divider>
 
-          <Button
-            icon={<GoogleOutlined />}
-            onClick={handleGoogleLogin}
-            block
-            style={{ marginBottom: '16px' }}
-          >
-            Continue with Google
-          </Button>
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Button
+              icon={<GoogleOutlined />}
+              onClick={handleGoogleLogin}
+              block
+            >
+              Continue with Google
+            </Button>
+            <Button
+              icon={<YandexOutlined />}
+              onClick={handleYandexLogin}
+              block
+            >
+              Continue with Yandex
+            </Button>
+          </Space>
 
           <div className="register-link">
             <Text>
