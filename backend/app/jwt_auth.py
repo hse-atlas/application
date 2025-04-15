@@ -280,7 +280,8 @@ async def should_refresh_token(payload) -> bool:
     token_lifetime = expiration_time - issued_at_time
 
     # Рассчитываем порог обновления (70% от времени жизни токена)
-    refresh_threshold = expiration_time - (token_lifetime * TOKEN_REFRESH_WINDOW_PERCENT)
+    # Обновлять токен, когда осталось меньше 30% времени жизни
+    refresh_threshold = expiration_time - (token_lifetime * (1 - TOKEN_REFRESH_WINDOW_PERCENT))
 
     # Если текущее время после порога обновления, то обновляем токен
     need_refresh = current_time >= refresh_threshold
