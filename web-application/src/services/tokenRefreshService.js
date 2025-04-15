@@ -35,43 +35,66 @@ class TokenRefreshService {
   // Приватный метод для проверки токена с возможными уведомлениями
   async _checkTokenWithNotification() {
     try {
-      // Получаем текущий токен
       const token = localStorage.getItem('access_token');
-      if (!token) return;
+      if (!token) {
+        this._handleSessionExpired();
+        return;
+      }
 
-      // Декодируем его для проверки
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(
-        atob(base64).split('').map(c => {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-        }).join('')
-      );
-
-      const { exp } = JSON.parse(jsonPayload);
+      const { exp } = this._decodeToken(token);
       if (!exp) return;
 
       const currentTime = Math.floor(Date.now() / 1000);
       const expiresIn = exp - currentTime;
 
-      // Если токен скоро истечет, обновляем его и показываем уведомление
-      if (expiresIn < 300) {
-        const oldToken = token;
-        await checkAndRefreshTokenIfNeeded();
-        const newToken = localStorage.getItem('access_token');
+      if (expiresIn < 300) { // 5 минут
+        try {
+          // Отменяем предыдущий незавершенный запрос, если есть
+          if (this._refreshRequest && this._refreshRequest.cancel) {
+            this._refreshRequest.cancel('New refresh attempt');
+          }
 
-        // Проверяем, действительно ли токен изменился
-        if (this.showNotifications && oldToken !== newToken) {
-          message.info({
-            content: 'Your session was automatically extended to keep you logged in.',
-            duration: 3,
-            style: { marginTop: '20px' },
+          // Создаем новый токен отмены
+          const cancelToken = new axios.CancelToken(c => {
+            this._refreshRequest = { cancel: c };
           });
+
+          const oldToken = token;
+          const success = await checkAndRefreshTokenIfNeeded({ cancelToken });
+
+          if (!success) {
+            throw new Error('Token refresh failed');
+          }
+
+          const newToken = localStorage.getItem('access_token');
+          if (this.showNotifications && oldToken !== newToken) {
+            message.info('Session was extended');
+          }
+        } catch (error) {
+          if (axios.isCancel(error)) {
+            console.log('Refresh request canceled:', error.message);
+          } else {
+            console.error('Token refresh error:', error);
+            this._handleSessionExpired();
+          }
+        } finally {
+          this._refreshRequest = null;
         }
       }
     } catch (error) {
-      console.error('Error in token check with notification:', error);
+      console.error('Token check error:', error);
+      this._handleSessionExpired();
     }
+  }
+
+  _handleSessionExpired() {
+    if (this.showNotifications) {
+      message.error('Session expired. Please login again.');
+    }
+    this.stop();
+    // Дополнительные действия: очистка хранилища, редирект на логин и т.д.
+    localStorage.removeItem('access_token');
+    window.location.href = '/login';
   }
 
   // Остановка сервиса
@@ -107,7 +130,7 @@ const tokenRefreshService = new TokenRefreshService();
 tokenRefreshService.registerEventListeners();
 
 // Публичный метод для включения уведомлений в консоли разработчика
-tokenRefreshService.debug = function() {
+tokenRefreshService.debug = function () {
   this.toggleNotifications(true);
   console.log('%c[Token Service] 🔍 Debug mode enabled. You will see notifications when tokens are refreshed.',
     'background: #e6f7ff; color: #1890ff; padding: 4px; border-radius: 2px; font-weight: bold;');
