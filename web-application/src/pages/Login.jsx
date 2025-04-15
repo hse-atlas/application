@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Form, Input, Button, Typography, message, Divider, Space } from "antd";
 import { useNavigate } from "react-router-dom";
-import { GoogleOutlined, YandexOutlined } from "@ant-design/icons";
+import { GoogleOutlined, WeiboOutlined } from "@ant-design/icons";
 import { login } from "../api";
 import tokenRefreshService from "../services/tokenRefreshService";
 import "../styles/Login.css";
@@ -159,7 +159,7 @@ const Login = () => {
               Continue with Google
             </Button>
             <Button
-              icon={<YandexOutlined />}
+              icon={<WeiboOutlined />}
               onClick={handleYandexLogin}
               block
             >

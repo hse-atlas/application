@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Form, Input, Button, Typography, message, Divider, Space } from "antd";
-import { GoogleOutlined, YandexOutlined } from "@ant-design/icons";
+import { GoogleOutlined, WeiboOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import { register } from "../api";
 import "../styles/Register.css";
@@ -207,7 +207,7 @@ const Register = () => {
               Sign up with Google
             </Button>
             <Button
-              icon={<YandexOutlined />}
+              icon={<WeiboOutlined />}
               onClick={handleYandexLogin}
               block
             >
