@@ -10,23 +10,28 @@ const AddProject = ({ visible, onCancel, onAdd }) => {
     // и использовать только checkbox для включения/выключения
     google: {
       enabled: false,
-      client_id: "",
-      client_secret: "",
-      redirect_uri: "",
+      //client_id: "",
+      //client_secret: "",
+      //redirect_uri: "",
     },
     github: {
       enabled: false,
-      client_id: "",
-      client_secret: "",
-      redirect_uri: "",
+      //client_id: "",
+      //client_secret: "",
+      //redirect_uri: "",
     },
     yandex: {
       enabled: false,
-      client_id: "",
-      client_secret: "",
-      redirect_uri: "",
+      //client_id: "",
+      //client_secret: "",
+      //redirect_uri: "",
     },
-    vk: { enabled: false, client_id: "", client_secret: "", redirect_uri: "" },
+    vk: {
+      enabled: false,
+      //client_id: "",
+      //client_secret: "",
+      //redirect_uri: "" 
+    },
   });
 
   const handleAddProject = async (values) => {
@@ -99,6 +104,7 @@ const AddProject = ({ visible, onCancel, onAdd }) => {
           <Input.TextArea placeholder="Enter project description" />
         </Form.Item>
 
+        {/*
         <Form.Item
           name="url"
           label="Project URL"
@@ -111,7 +117,7 @@ const AddProject = ({ visible, onCancel, onAdd }) => {
         >
           <Input placeholder="Enter project URL" />
         </Form.Item>
-
+          */}
         <Form.Item label="Enable OAuth">
           <Switch
             checked={oauthEnabled}
@@ -135,6 +141,7 @@ const AddProject = ({ visible, onCancel, onAdd }) => {
                   />
                 </Form.Item>
 
+                {/*
                 {oauthProviders[provider].enabled && (
                   <>
                     <Form.Item label={`${provider.toUpperCase()} Client ID`}>
@@ -182,9 +189,10 @@ const AddProject = ({ visible, onCancel, onAdd }) => {
                           }))
                         }
                       />
-                    </Form.Item>
+                    </Form.Item>    
                   </>
                 )}
+                */}
               </div>
             ))}
           </>

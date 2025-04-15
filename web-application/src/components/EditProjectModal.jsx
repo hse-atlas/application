@@ -69,6 +69,7 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
           <Input.TextArea placeholder="Enter project description" />
         </Form.Item>
 
+        {/*
         <Form.Item
           name="url"
           label="Project URL"
@@ -81,8 +82,10 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
         >
           <Input placeholder="Enter project URL" />
         </Form.Item>
+        */}
 
-        // Добавить включение/выключение OAuth
+
+
       </Form>
 
       <div style={{ textAlign: "right", marginTop: "16px" }}>
