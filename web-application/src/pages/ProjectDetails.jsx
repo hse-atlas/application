@@ -356,6 +356,8 @@ const ProjectDetails = () => {
           name: project.name,
           description: project.description,
           url: project.url,
+          oauth_enabled: project.oauth_enabled, // Добавляем состояние OAuth
+          oauth_providers: project.oauth_providers // Добавляем провайдеры
         }}
       />
     </div>

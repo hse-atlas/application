@@ -5,8 +5,6 @@ import { editeProject, isValidUUID } from "../api";
 
 const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
   const [form] = Form.useForm();
-  const navigate = useNavigate();
-  const { id } = useParams();
   const [oauthEnabled, setOauthEnabled] = useState(false);
   const [oauthProviders, setOauthProviders] = useState({
     google: { enabled: false },
@@ -18,13 +16,17 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
 
   useEffect(() => {
     if (visible && initialValues) {
-      form.setFieldsValue(initialValues);
+      form.setFieldsValue({
+        name: initialValues.name,
+        description: initialValues.description,
+        url: initialValues.url
+      });
 
-      // Устанавливаем состояние OAuth из initialValues
+      // Инициализация OAuth состояния
       const oauthEnabled = initialValues.oauth_enabled || false;
       setOauthEnabled(oauthEnabled);
 
-      // Инициализируем состояние провайдеров
+      // Инициализация провайдеров
       const providersFromDB = initialValues.oauth_providers || {};
       const providersState = {
         google: { enabled: providersFromDB.google?.enabled || false },
@@ -33,39 +35,9 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
         vk: { enabled: providersFromDB.vk?.enabled || false },
       };
       setOauthProviders(providersState);
-
-      // Обновляем список активных провайдеров
       updateActiveProviders(providersState);
     }
   }, [visible, initialValues, form]);
-
-  const handleSave = async () => {
-    try {
-      if (!isValidUUID(id)) {
-        message.error("Invalid project ID format");
-        return;
-      }
-
-      const values = await form.validateFields();
-
-      const requestData = {
-        ...values,
-        oauth_enabled: oauthEnabled,
-        oauth_providers: oauthEnabled ? oauthProviders : null, // Отправляем null, если OAuth выключен
-      };
-
-      const response = await editeProject(id, requestData);
-
-      if (response.status === 200) {
-        message.success("Project updated successfully");
-        onSave(response.data);
-        onCancel();
-      }
-    } catch (error) {
-      console.error("Update error:", error);
-      message.error(error.response?.data?.detail || "Failed to update project");
-    }
-  };
 
   const updateActiveProviders = (providers) => {
     const active = [];
@@ -83,6 +55,24 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
     };
     setOauthProviders(newProviders);
     updateActiveProviders(newProviders);
+  };
+
+  const handleSave = async () => {
+    try {
+      const values = await form.validateFields();
+
+      const requestData = {
+        ...values,
+        oauth_enabled: oauthEnabled,
+        oauth_providers: oauthEnabled ? oauthProviders : null,
+      };
+
+      onSave(requestData);
+      onCancel();
+    } catch (error) {
+      console.error("Validation error:", error);
+      message.error("Please fill all required fields correctly");
+    }
   };
 
   return (
