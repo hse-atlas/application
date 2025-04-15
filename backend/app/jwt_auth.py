@@ -1,18 +1,19 @@
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Union, Dict, Any
+import asyncio
+import logging
 import uuid
-from jose import jwt, JWTError
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Dict, Any
+
+import redis.asyncio as redis
+from app.config import get_auth_data, get_redis_url, config
+from app.database import async_session_maker
+from app.schemas import AdminsBase, UsersBase
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
-import redis.asyncio as redis
+from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.database import async_session_maker
-from app.schemas import AdminsBase, UsersBase
-from app.config import get_auth_data, get_redis_url, config
-
-import logging
 logger = logging.getLogger(__name__)
 
 # Redis для хранения черного списка токенов и refresh токенов
@@ -164,7 +165,14 @@ async def decode_token(token: str) -> Dict[str, Any]:
 
 
 # Функция для отзыва токена (добавление в черный список)
-async def revoke_token(token: str):
+async def revoke_token(token: str, delay_seconds: int = 5):
+    """
+    Отзыв токена с опциональной задержкой
+
+    Args:
+        token: Токен для отзыва
+        delay_seconds: Задержка перед добавлением в черный список (по умолчанию 0 - немедленный отзыв)
+    """
     try:
         # Декодируем без проверки подписи
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_signature": False})
@@ -183,16 +191,48 @@ async def revoke_token(token: str):
             logger.info(f"Token {jti} already in blacklist, skipping")
             return False
 
-        # Устанавливаем TTL с некоторым запасом
-        ttl = max(1, int(exp - now) + 60)  # Добавляем минутный запас
-
-        logger.info(f"Revoking token: JTI={jti}, TTL={ttl}")
-        await redis_client.setex(f"blacklist:{jti}", ttl, "1")
-
-        return True
+        # Применяем задержку для добавления в черный список
+        if delay_seconds > 0:
+            logger.info(f"Scheduling token revocation with {delay_seconds}s delay: JTI={jti}")
+            # Используем asyncio.create_task для отложенного выполнения
+            asyncio.create_task(delayed_revocation(jti, exp, delay_seconds))
+            return True
+        else:
+            # Стандартное немедленное добавление в черный список
+            ttl = max(1, int(exp - now))
+            logger.info(f"Revoking token immediately: JTI={jti}, TTL={ttl}")
+            await redis_client.setex(f"blacklist:{jti}", ttl, "1")
+            return True
     except Exception as e:
         logger.error(f"Error during token revocation: {str(e)}")
         return False
+
+
+async def delayed_revocation(jti: str, exp: float, delay_seconds: int):
+    """
+    Отложенное добавление токена в черный список
+
+    Args:
+        jti: Уникальный идентификатор токена
+        exp: Время истечения токена в Unix timestamp
+        delay_seconds: Задержка в секундах
+    """
+    try:
+        # Ждем указанное время
+        await asyncio.sleep(delay_seconds)
+
+        # Проверяем снова, не истек ли срок действия
+        now = datetime.now(timezone.utc).timestamp()
+        if now > exp:
+            logger.info(f"Token {jti} expired during delay, skipping revocation")
+            return
+
+        # Устанавливаем TTL
+        ttl = max(1, int(exp - now))
+        logger.info(f"Delayed token revocation: JTI={jti}, TTL={ttl}")
+        await redis_client.setex(f"blacklist:{jti}", ttl, "1")
+    except Exception as e:
+        logger.error(f"Error during delayed token revocation: {str(e)}")
 
 
 # Функция для отзыва всех токенов пользователя
@@ -357,7 +397,13 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
             user_type = "user"
 
         # СКОЛЬЗЯЩЕЕ ОКНО: проверяем, нужно ли обновить токен
-        if user_type == "admin" and await should_refresh_token(payload):
+        # Определяем, является ли запрос результатом OAuth-редиректа
+        is_oauth_redirect = (
+                request.url.path == "/" and
+                (request.query_params.get("access_token") or request.query_params.get("refresh_token"))
+        )
+
+        if user_type == "admin" and await should_refresh_token(payload) and not is_oauth_redirect:
             logger.info("Token requires refresh (sliding window)")
             # Создаем новые токены для скользящего окна только для админов
             new_access_token = await create_access_token({"sub": user_id})
@@ -368,9 +414,10 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
             request.state.new_access_token = new_access_token
             request.state.new_refresh_token = new_refresh_token
 
-            # Отзываем старый токен, чтобы он не мог быть использован
-            logger.info("Revoking old token")
-            await revoke_token(access_token)
+            # Отзываем старый токен с задержкой в 5 секунд,
+            # чтобы у клиента было время получить и сохранить новые токены
+            logger.info("Scheduling old token revocation with delay")
+            await revoke_token(access_token, delay_seconds=5)
 
         logger.info(f"Auth middleware check completed successfully for {user_type}")
         return user

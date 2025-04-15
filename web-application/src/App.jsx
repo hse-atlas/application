@@ -11,7 +11,7 @@ import UserLoginEmbed from "./components/UserLoginEmbed";
 import UserRegisterEmbed from "./components/UserRegisterEmbed";
 import tokenRefreshService from "./services/tokenRefreshService";
 
-function AppContent() {  // <-- Компонент внутри Router
+function AppContent() {
   const location = useLocation();
 
   useEffect(() => {
@@ -29,8 +29,13 @@ function AppContent() {  // <-- Компонент внутри Router
       const cleanUrl = window.location.pathname;
       window.history.replaceState({}, document.title, cleanUrl);
 
-      // Запуск сервиса обновления токенов
-      tokenRefreshService.start();
+      // Отложенный запуск сервиса обновления токенов
+      // Это дает время для завершения всех редиректов и установки cookies
+      console.log("OAuth detection: Delaying token refresh service startup");
+      setTimeout(() => {
+        console.log("Starting token refresh service after OAuth redirect");
+        tokenRefreshService.start();
+      }, 2000); // Задержка в 2 секунды
     } else {
       // Проверка наличия токена в localStorage для запуска сервиса обновления
       const isEmbedPage = location.pathname.startsWith('/embed/login/') ||
@@ -45,7 +50,7 @@ function AppContent() {  // <-- Компонент внутри Router
     return () => {
       tokenRefreshService.stop();
     };
-  }, [location.pathname, location.search]); // Добавлен location.search для отслеживания параметров
+  }, [location.pathname, location.search]); // Наблюдаем за URL и параметрами
 
   return (
     <Routes>
