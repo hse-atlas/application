@@ -115,7 +115,7 @@ async def token_refresh(
         raise e
     except Exception as e:
         # Логируем неожиданную ошибку
-        logger.error(f"Unexpected error during token refresh: {str(e)}")
+        logger.error(f"Unexpected error during token refresh: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to refresh tokens"

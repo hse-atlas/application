@@ -1,5 +1,6 @@
 import { checkAndRefreshTokenIfNeeded } from '../api';
 import { message } from 'antd';
+import tokenService from './tokenService';
 
 // Интервал проверки токена (в миллисекундах)
 const TOKEN_CHECK_INTERVAL = 60000; // Проверять каждую минуту
@@ -20,6 +21,9 @@ class TokenRefreshService {
   start() {
     if (this.isActive) return;
 
+    // Выполняем синхронизацию токенов перед запуском
+    tokenService.synchronizeTokens();
+
     // Проверяем токен при старте
     this._checkTokenWithNotification();
 
@@ -35,30 +39,20 @@ class TokenRefreshService {
   // Приватный метод для проверки токена с возможными уведомлениями
   async _checkTokenWithNotification() {
     try {
-      // Получаем текущий токен
-      const token = localStorage.getItem('access_token');
-      if (!token) return;
+      // Получаем актуальную информацию о токене через сервис
+      const tokenInfo = tokenService.checkTokenExpiration();
 
-      // Декодируем его для проверки
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(
-        atob(base64).split('').map(c => {
-          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-        }).join('')
-      );
+      if (!tokenInfo.isValid) {
+        console.log('Token is not valid, stopping refresh service');
+        this.stop();
+        return;
+      }
 
-      const { exp } = JSON.parse(jsonPayload);
-      if (!exp) return;
-
-      const currentTime = Math.floor(Date.now() / 1000);
-      const expiresIn = exp - currentTime;
-
-      // Если токен скоро истечет, обновляем его и показываем уведомление
-      if (expiresIn < 300) {
-        const oldToken = token;
+      // Если токен скоро истечет, обновляем его
+      if (tokenInfo.expiresIn < 300) { // менее 5 минут
+        const oldToken = tokenService.getAccessToken();
         await checkAndRefreshTokenIfNeeded();
-        const newToken = localStorage.getItem('access_token');
+        const newToken = tokenService.getAccessToken();
 
         // Проверяем, действительно ли токен изменился
         if (this.showNotifications && oldToken !== newToken) {
@@ -91,12 +85,15 @@ class TokenRefreshService {
       if (document.hidden) {
         this.stop();
       } else {
+        // Синхронизируем токены перед возобновлением
+        tokenService.synchronizeTokens();
         this.start(); // Возобновляем и сразу проверяем токен
       }
     });
 
     // Проверяем токен при возвращении онлайн
     window.addEventListener('online', () => {
+      tokenService.synchronizeTokens();
       checkAndRefreshTokenIfNeeded();
     });
   }

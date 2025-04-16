@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from "react";
 import { Form, Input, Button, message } from "antd";
 import { useParams } from "react-router-dom";
-import { loginUser, isValidUUID } from "../api"; // Импортируем isValidUUID
+import { loginUser, isValidUUID } from "../api";
+import tokenService from "../services/tokenService";
 
 const UserLoginEmbed = () => {
     const [loading, setLoading] = useState(false);
@@ -20,6 +21,12 @@ const UserLoginEmbed = () => {
                 email: values.email,
                 password: values.password,
             });
+
+            // Сохраняем токены через сервис
+            tokenService.saveTokens({
+                access_token: response.access_token,
+                refresh_token: response.refresh_token
+            }, "user");
 
             window.parent.postMessage({
                 type: "ATLAS_AUTH_SUCCESS",

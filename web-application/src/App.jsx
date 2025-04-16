@@ -10,6 +10,7 @@ import ProjectDetails from "./pages/ProjectDetails";
 import UserLoginEmbed from "./components/UserLoginEmbed";
 import UserRegisterEmbed from "./components/UserRegisterEmbed";
 import tokenRefreshService from "./services/tokenRefreshService";
+import tokenService from "./services/tokenService";
 
 function AppContent() {
   const location = useLocation();
@@ -21,9 +22,11 @@ function AppContent() {
     const refreshToken = params.get('refresh_token');
 
     if (accessToken && refreshToken) {
-      // Сохранение токенов в localStorage
-      localStorage.setItem('access_token', accessToken);
-      localStorage.setItem('refresh_token', refreshToken);
+      // Сохранение токенов через сервис
+      tokenService.saveTokens({
+        access_token: accessToken,
+        refresh_token: refreshToken
+      });
 
       // Удаление параметров из URL (чтобы они не остались в истории)
       const cleanUrl = window.location.pathname;
@@ -41,8 +44,8 @@ function AppContent() {
       const isEmbedPage = location.pathname.startsWith('/embed/login/') ||
         location.pathname.startsWith('/embed/register/');
 
-      const storedAccessToken = localStorage.getItem("access_token");
-      if (storedAccessToken && !isEmbedPage) {
+      // Используем метод проверки аутентификации из сервиса
+      if (tokenService.isAuthenticated() && !isEmbedPage) {
         tokenRefreshService.start();
       }
     }

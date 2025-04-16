@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from "react";
 import { Form, Input, Button, message } from "antd";
 import { useParams } from "react-router-dom";
-import { registerUser, isValidUUID } from "../api"; // Импортируем isValidUUID
+import { registerUser, isValidUUID } from "../api";
+import tokenService from "../services/tokenService";
 
 const UserRegisterEmbed = () => {
     const [loading, setLoading] = useState(false);

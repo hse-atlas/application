@@ -1,4 +1,5 @@
 import axios from "axios";
+import tokenService from "../services/tokenService";
 
 // Создаем экземпляр axios с базовым URL
 const api = axios.create({
@@ -28,7 +29,9 @@ const processQueue = (error, token = null) => {
 const refreshTokens = async () => {
   try {
     console.log('%c[Token] 🔄 Starting token refresh...', 'background: #e6f7ff; color: #1890ff; padding: 2px 4px; border-radius: 2px;');
-    const refreshToken = localStorage.getItem('refresh_token');
+
+    // Получаем актуальный refresh токен через сервис
+    const refreshToken = tokenService.getRefreshToken();
     if (!refreshToken) {
       throw new Error('No refresh token available');
     }
@@ -39,15 +42,14 @@ const refreshTokens = async () => {
       withCredentials: true
     });
 
-    // Запрос на обновление токенов (ИЗМЕНЕН ПУТЬ)
+    // Запрос на обновление токенов
     const response = await refreshApi.post("/api/auth/refresh/", {
       refresh_token: refreshToken
     });
 
-    // Сохраняем новые токены
+    // Сохраняем новые токены через сервис
     const { access_token, refresh_token } = response.data;
-    localStorage.setItem('access_token', access_token);
-    localStorage.setItem('refresh_token', refresh_token);
+    tokenService.saveTokens({ access_token, refresh_token });
 
     console.log('%c[Token] ✅ Tokens refreshed successfully!', 'background: #f6ffed; color: #52c41a; padding: 2px 4px; border-radius: 2px;', {
       access_token_starts_with: access_token.substring(0, 15) + '...',
@@ -57,9 +59,8 @@ const refreshTokens = async () => {
     return access_token;
   } catch (error) {
     console.log('%c[Token] ❌ Token refresh failed', 'background: #fff2f0; color: #f5222d; padding: 2px 4px; border-radius: 2px;', error);
-    // При ошибке обновления, вынуждаем пользователя перелогиниться
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    // При ошибке обновления, очищаем токены
+    tokenService.clearTokens();
 
     // Редирект на страницу логина
     window.location.href = '/login';
@@ -67,27 +68,11 @@ const refreshTokens = async () => {
   }
 };
 
-// Добавляем интерсептор для обработки ошибок и автоматического обновления токенов
+// Добавляем интерсептор для обработки ответов и синхронизации токенов
 api.interceptors.response.use(
   (response) => {
-    // Проверяем заголовки Cookie в ответе для синхронизации с localStorage
-    const cookies = document.cookie.split(';').reduce((cookies, cookie) => {
-      const [name, value] = cookie.trim().split('=');
-      cookies[name] = value;
-      return cookies;
-    }, {});
-
-    // Обновляем токены в localStorage, если они есть в cookie
-    if (cookies.admins_access_token) {
-      localStorage.setItem('access_token', cookies.admins_access_token);
-      console.log('Access token updated from cookie');
-    }
-
-    if (cookies.admins_refresh_token) {
-      localStorage.setItem('refresh_token', cookies.admins_refresh_token);
-      console.log('Refresh token updated from cookie');
-    }
-
+    // Синхронизируем токены после каждого ответа
+    tokenService.synchronizeTokens();
     return response;
   },
   async (error) => {
@@ -140,7 +125,8 @@ api.interceptors.response.use(
 // Добавляем интерсептор для авторизации запросов
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("access_token");
+    // Получаем актуальный токен через сервис
+    const token = tokenService.getAccessToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -154,36 +140,25 @@ api.interceptors.request.use(
 // Проверка срока действия access_token и проактивное обновление
 export const checkAndRefreshTokenIfNeeded = async () => {
   try {
-    // Получение токена
-    const token = localStorage.getItem('access_token');
-    if (!token) return;
+    // Проверяем срок действия токена через сервис
+    const tokenInfo = tokenService.checkTokenExpiration();
 
-    // Декодирование JWT (без проверки подписи)
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(
-      atob(base64).split('').map(c => {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-      }).join('')
-    );
-
-    const { exp } = JSON.parse(jsonPayload);
-    if (!exp) return;
-
-    // Получаем текущее время в секундах
-    const currentTime = Math.floor(Date.now() / 1000);
+    if (!tokenInfo.isValid) {
+      console.log('%c[Token] ❌ Token not valid', 'color: #f5222d;');
+      return;
+    }
 
     // Если токен истекает в течение следующих 5 минут, обновляем его
-    if (exp - currentTime < 300) { // 300 секунд = 5 минут
+    if (tokenInfo.expiresIn < 300) {
       console.log('%c[Token] ⏰ Token will expire soon, refreshing...', 'background: #fffbe6; color: #faad14; padding: 2px 4px; border-radius: 2px;', {
-        expires_in_seconds: exp - currentTime,
-        token_exp: new Date(exp * 1000).toLocaleTimeString()
+        expires_in_seconds: tokenInfo.expiresIn,
+        token_exp: tokenInfo.expirationTime.toLocaleTimeString()
       });
       await refreshTokens();
     } else {
       console.log('%c[Token] ✓ Token valid', 'color: #52c41a;', {
-        expires_in_minutes: Math.floor((exp - currentTime) / 60),
-        token_exp: new Date(exp * 1000).toLocaleTimeString()
+        expires_in_minutes: Math.floor(tokenInfo.expiresIn / 60),
+        token_exp: tokenInfo.expirationTime.toLocaleTimeString()
       });
     }
   } catch (error) {

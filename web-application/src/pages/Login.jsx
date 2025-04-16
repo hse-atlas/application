@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { GoogleOutlined, WeiboOutlined } from "@ant-design/icons";
 import { login } from "../api";
 import tokenRefreshService from "../services/tokenRefreshService";
+import tokenService from "../services/tokenService";
 import "../styles/Login.css";
 
 const { Title, Text } = Typography;
@@ -23,8 +24,8 @@ const Login = () => {
 
       const { access_token, refresh_token } = response.data;
 
-      localStorage.setItem("access_token", access_token);
-      localStorage.setItem("refresh_token", refresh_token);
+      // Используем новый tokenService вместо прямой записи в localStorage
+      tokenService.saveTokens({ access_token, refresh_token }, "admin");
 
       tokenRefreshService.start();
 
