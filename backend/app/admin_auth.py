@@ -6,7 +6,7 @@ from slowapi.util import get_remote_address
 from app.database import async_session_maker
 from app.schemas import RegisterData, LoginData, TokenResponse, AdminsBase, AdminProfileResponse
 from app.security import verify_password, get_password_hash, password_meets_requirements
-from app.jwt_auth import create_access_token, create_refresh_token, get_current_admin, refresh_tokens
+from app.jwt_auth import create_access_token, create_refresh_token, get_current_admin, refresh_tokens, decode_token, revoke_token
 
 # Добавим логирование в авторизацию админов
 import logging
