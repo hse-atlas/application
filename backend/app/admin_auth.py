@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Response, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
