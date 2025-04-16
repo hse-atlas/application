@@ -22,7 +22,7 @@ const UserLoginEmbed = () => {
                 password: values.password,
             });
 
-            // Сохраняем токены через сервис
+            // Сохраняем токены и явно указываем, что мы авторизуемся как user
             tokenService.saveTokens({
                 access_token: response.access_token,
                 refresh_token: response.refresh_token

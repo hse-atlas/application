@@ -1,13 +1,13 @@
 // tokenService.js - единый сервис для управления токенами
 
 const TOKEN_NAMES = {
-  ACCESS: {
+  ADMIN_ACCESS: {
     cookie: "admins_access_token",
-    storage: "access_token"
+    storage: "admin_access_token"
   },
-  REFRESH: {
+  ADMIN_REFRESH: {
     cookie: "admins_refresh_token",
-    storage: "refresh_token"
+    storage: "admin_refresh_token"
   },
   USER_ACCESS: {
     cookie: "users_access_token",
@@ -18,6 +18,42 @@ const TOKEN_NAMES = {
     storage: "user_refresh_token"
   }
 };
+
+// Текущий тип пользователя
+let currentUserType = null;
+
+/**
+ * Устанавливает тип текущего пользователя
+ * @param {string} userType - тип пользователя ('admin' или 'user')
+ */
+function setUserType(userType) {
+  if (userType !== 'admin' && userType !== 'user') {
+    console.error(`Invalid user type: ${userType}. Must be 'admin' or 'user'`);
+    return;
+  }
+  currentUserType = userType;
+  console.log(`User type set to: ${userType}`);
+}
+
+/**
+ * Получает текущий тип пользователя
+ * @returns {string|null} - тип пользователя ('admin' или 'user') или null
+ */
+function getUserType() {
+  // Если тип не установлен явно, пытаемся определить по токенам
+  if (!currentUserType) {
+    const adminAccess = getTokenFromCookie(TOKEN_NAMES.ADMIN_ACCESS.cookie);
+    const userAccess = getTokenFromCookie(TOKEN_NAMES.USER_ACCESS.cookie);
+
+    if (adminAccess) {
+      currentUserType = 'admin';
+    } else if (userAccess) {
+      currentUserType = 'user';
+    }
+  }
+
+  return currentUserType;
+}
 
 /**
  * Получает токен из cookie
@@ -36,31 +72,49 @@ function getTokenFromCookie(name) {
 }
 
 /**
- * Синхронизирует токены между cookie и localStorage
- * Приоритет имеют токены из cookie
+ * Синхронизирует токены в localStorage в соответствии с текущим типом пользователя
  */
 function synchronizeTokens() {
-  console.debug('Synchronizing tokens between cookies and localStorage');
+  const userType = getUserType();
+  console.debug(`Synchronizing tokens for user type: ${userType}`);
 
-  // Проверка и синхронизация для access_token
-  const accessTokenCookie = getTokenFromCookie(TOKEN_NAMES.ACCESS.cookie);
-  const userAccessTokenCookie = getTokenFromCookie(TOKEN_NAMES.USER_ACCESS.cookie);
-
-  // Приоритет: admin token, затем user token
-  if (accessTokenCookie) {
-    localStorage.setItem(TOKEN_NAMES.ACCESS.storage, accessTokenCookie);
-  } else if (userAccessTokenCookie) {
-    localStorage.setItem(TOKEN_NAMES.ACCESS.storage, userAccessTokenCookie);
+  if (!userType) {
+    console.debug('No user type determined, cannot synchronize tokens');
+    return;
   }
 
-  // То же самое для refresh токенов
-  const refreshTokenCookie = getTokenFromCookie(TOKEN_NAMES.REFRESH.cookie);
-  const userRefreshTokenCookie = getTokenFromCookie(TOKEN_NAMES.USER_REFRESH.cookie);
+  if (userType === 'admin') {
+    // Для админа берем соответствующие куки
+    const accessTokenCookie = getTokenFromCookie(TOKEN_NAMES.ADMIN_ACCESS.cookie);
+    const refreshTokenCookie = getTokenFromCookie(TOKEN_NAMES.ADMIN_REFRESH.cookie);
 
-  if (refreshTokenCookie) {
-    localStorage.setItem(TOKEN_NAMES.REFRESH.storage, refreshTokenCookie);
-  } else if (userRefreshTokenCookie) {
-    localStorage.setItem(TOKEN_NAMES.REFRESH.storage, userRefreshTokenCookie);
+    if (accessTokenCookie) {
+      localStorage.setItem(TOKEN_NAMES.ADMIN_ACCESS.storage, accessTokenCookie);
+    }
+
+    if (refreshTokenCookie) {
+      localStorage.setItem(TOKEN_NAMES.ADMIN_REFRESH.storage, refreshTokenCookie);
+    }
+
+    // Очищаем пользовательские токены если они есть
+    localStorage.removeItem(TOKEN_NAMES.USER_ACCESS.storage);
+    localStorage.removeItem(TOKEN_NAMES.USER_REFRESH.storage);
+  } else {
+    // Для обычного пользователя берем соответствующие куки
+    const accessTokenCookie = getTokenFromCookie(TOKEN_NAMES.USER_ACCESS.cookie);
+    const refreshTokenCookie = getTokenFromCookie(TOKEN_NAMES.USER_REFRESH.cookie);
+
+    if (accessTokenCookie) {
+      localStorage.setItem(TOKEN_NAMES.USER_ACCESS.storage, accessTokenCookie);
+    }
+
+    if (refreshTokenCookie) {
+      localStorage.setItem(TOKEN_NAMES.USER_REFRESH.storage, refreshTokenCookie);
+    }
+
+    // Очищаем админские токены если они есть
+    localStorage.removeItem(TOKEN_NAMES.ADMIN_ACCESS.storage);
+    localStorage.removeItem(TOKEN_NAMES.ADMIN_REFRESH.storage);
   }
 }
 
@@ -70,7 +124,15 @@ function synchronizeTokens() {
  */
 function getAccessToken() {
   synchronizeTokens();
-  return localStorage.getItem(TOKEN_NAMES.ACCESS.storage);
+  const userType = getUserType();
+
+  if (userType === 'admin') {
+    return localStorage.getItem(TOKEN_NAMES.ADMIN_ACCESS.storage);
+  } else if (userType === 'user') {
+    return localStorage.getItem(TOKEN_NAMES.USER_ACCESS.storage);
+  }
+
+  return null;
 }
 
 /**
@@ -79,7 +141,15 @@ function getAccessToken() {
  */
 function getRefreshToken() {
   synchronizeTokens();
-  return localStorage.getItem(TOKEN_NAMES.REFRESH.storage);
+  const userType = getUserType();
+
+  if (userType === 'admin') {
+    return localStorage.getItem(TOKEN_NAMES.ADMIN_REFRESH.storage);
+  } else if (userType === 'user') {
+    return localStorage.getItem(TOKEN_NAMES.USER_REFRESH.storage);
+  }
+
+  return null;
 }
 
 /**
@@ -90,23 +160,32 @@ function getRefreshToken() {
 function saveTokens(tokens, userType = 'admin') {
   if (!tokens) return;
 
+  setUserType(userType); // установка текущего типа пользователя
   const { access_token, refresh_token } = tokens;
-  const isAdmin = userType === 'admin';
+
+  // Определяем правильные ключи на основе типа пользователя
+  const accessStorageKey = userType === 'admin' ?
+    TOKEN_NAMES.ADMIN_ACCESS.storage : TOKEN_NAMES.USER_ACCESS.storage;
+
+  const refreshStorageKey = userType === 'admin' ?
+    TOKEN_NAMES.ADMIN_REFRESH.storage : TOKEN_NAMES.USER_REFRESH.storage;
+
+  const accessCookieName = userType === 'admin' ?
+    TOKEN_NAMES.ADMIN_ACCESS.cookie : TOKEN_NAMES.USER_ACCESS.cookie;
+
+  const refreshCookieName = userType === 'admin' ?
+    TOKEN_NAMES.ADMIN_REFRESH.cookie : TOKEN_NAMES.USER_REFRESH.cookie;
 
   // Сохраняем в localStorage
   if (access_token) {
-    localStorage.setItem(TOKEN_NAMES.ACCESS.storage, access_token);
+    localStorage.setItem(accessStorageKey, access_token);
   }
 
   if (refresh_token) {
-    localStorage.setItem(TOKEN_NAMES.REFRESH.storage, refresh_token);
+    localStorage.setItem(refreshStorageKey, refresh_token);
   }
 
-  // Сохраняем в cookies с помощью JS, если их нет
-  const accessCookieName = isAdmin ? TOKEN_NAMES.ACCESS.cookie : TOKEN_NAMES.USER_ACCESS.cookie;
-  const refreshCookieName = isAdmin ? TOKEN_NAMES.REFRESH.cookie : TOKEN_NAMES.USER_REFRESH.cookie;
-
-  // Проверяем, что токены в cookie либо отсутствуют, либо отличаются от наших
+  // Сохраняем в cookies только если их нет или они отличаются
   if (access_token && getTokenFromCookie(accessCookieName) !== access_token) {
     document.cookie = `${accessCookieName}=${access_token}; path=/; secure; samesite=strict`;
   }
@@ -121,79 +200,137 @@ function saveTokens(tokens, userType = 'admin') {
  */
 function clearTokens() {
   // Очищаем localStorage
-  localStorage.removeItem(TOKEN_NAMES.ACCESS.storage);
-  localStorage.removeItem(TOKEN_NAMES.REFRESH.storage);
+  // Очищаем localStorage
+ localStorage.removeItem(TOKEN_NAMES.ADMIN_ACCESS.storage);
+ localStorage.removeItem(TOKEN_NAMES.ADMIN_REFRESH.storage);
+ localStorage.removeItem(TOKEN_NAMES.USER_ACCESS.storage);
+ localStorage.removeItem(TOKEN_NAMES.USER_REFRESH.storage);
 
-  // Очищаем cookies
-  const pastDate = new Date(0).toUTCString();
-  document.cookie = `${TOKEN_NAMES.ACCESS.cookie}=; expires=${pastDate}; path=/;`;
-  document.cookie = `${TOKEN_NAMES.REFRESH.cookie}=; expires=${pastDate}; path=/;`;
-  document.cookie = `${TOKEN_NAMES.USER_ACCESS.cookie}=; expires=${pastDate}; path=/;`;
-  document.cookie = `${TOKEN_NAMES.USER_REFRESH.cookie}=; expires=${pastDate}; path=/;`;
+ // Очищаем cookies
+ const pastDate = new Date(0).toUTCString();
+ document.cookie = `${TOKEN_NAMES.ADMIN_ACCESS.cookie}=; expires=${pastDate}; path=/;`;
+ document.cookie = `${TOKEN_NAMES.ADMIN_REFRESH.cookie}=; expires=${pastDate}; path=/;`;
+ document.cookie = `${TOKEN_NAMES.USER_ACCESS.cookie}=; expires=${pastDate}; path=/;`;
+ document.cookie = `${TOKEN_NAMES.USER_REFRESH.cookie}=; expires=${pastDate}; path=/;`;
+
+ // Сбрасываем текущий тип пользователя
+ currentUserType = null;
 }
 
 /**
- * Проверяет, авторизован ли пользователь
- * @returns {boolean} - true, если пользователь авторизован
- */
+* Проверяет, авторизован ли пользователь
+* @returns {boolean} - true, если пользователь авторизован
+*/
 function isAuthenticated() {
-  return !!getAccessToken();
+ return !!getAccessToken();
 }
 
 /**
- * Декодирует JWT токен без проверки подписи
- * @param {string} token - JWT токен
- * @returns {Object|null} - декодированный payload или null при ошибке
- */
+* Определяет URL для обновления токена на основе типа пользователя и проекта
+* @param {string|null} projectId - ID проекта (только для пользователей)
+* @returns {string} - URL для обновления токена
+*/
+function getRefreshEndpoint(projectId = null) {
+ const userType = getUserType();
+
+ if (userType === 'admin') {
+   return "/api/auth/admin/refresh/";
+ } else if (userType === 'user') {
+   if (!projectId) {
+     console.warn('Project ID not provided for user token refresh');
+     // Возвращаем общий эндпоинт как запасной вариант
+     return "/api/auth/refresh/";
+   }
+   return `/api/auth/user/${projectId}/refresh/`;
+ }
+
+ // Если тип не определен, используем старый общий эндпоинт
+ return "/api/auth/refresh/";
+}
+
+/**
+* Декодирует JWT токен без проверки подписи
+* @param {string} token - JWT токен
+* @returns {Object|null} - декодированный payload или null при ошибке
+*/
 function decodeToken(token) {
-  if (!token) return null;
+ if (!token) return null;
 
-  try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(
-      atob(base64).split('').map(c => {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-      }).join('')
-    );
+ try {
+   const base64Url = token.split('.')[1];
+   const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+   const jsonPayload = decodeURIComponent(
+     atob(base64).split('').map(c => {
+       return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+     }).join('')
+   );
 
-    return JSON.parse(jsonPayload);
-  } catch (error) {
-    console.error('Error decoding token:', error);
-    return null;
-  }
+   return JSON.parse(jsonPayload);
+ } catch (error) {
+   console.error('Error decoding token:', error);
+   return null;
+ }
 }
 
 /**
- * Проверяет срок действия токена
- * @returns {Object} - информация о сроке действия токена
- */
+* Проверяет срок действия токена
+* @returns {Object} - информация о сроке действия токена
+*/
 function checkTokenExpiration() {
-  const token = getAccessToken();
-  if (!token) return { isValid: false, expiresIn: 0 };
+ const token = getAccessToken();
+ if (!token) return { isValid: false, expiresIn: 0 };
 
-  const decoded = decodeToken(token);
-  if (!decoded || !decoded.exp) return { isValid: false, expiresIn: 0 };
+ const decoded = decodeToken(token);
+ if (!decoded || !decoded.exp) return { isValid: false, expiresIn: 0 };
 
-  const currentTime = Math.floor(Date.now() / 1000);
-  const expiresIn = decoded.exp - currentTime;
+ const currentTime = Math.floor(Date.now() / 1000);
+ const expiresIn = decoded.exp - currentTime;
 
-  return {
-    isValid: expiresIn > 0,
-    expiresIn,
-    expirationTime: new Date(decoded.exp * 1000),
-    payload: decoded
-  };
+ return {
+   isValid: expiresIn > 0,
+   expiresIn,
+   expirationTime: new Date(decoded.exp * 1000),
+   payload: decoded
+ };
+}
+
+/**
+* Получает ID проекта из текущего URL (для пользователей)
+* @returns {string|null} - ID проекта или null
+*/
+function getProjectIdFromUrl() {
+ // Извлекаем ID проекта из URL
+ const projectMatch = window.location.pathname.match(/\/project\/([a-f0-9-]+)/i);
+ return projectMatch ? projectMatch[1] : null;
+}
+
+/**
+* Обработка принудительного выхода при ошибке обновления токенов
+* @param {Error} error - ошибка
+*/
+function handleRefreshFailure(error) {
+ console.error('Fatal token refresh error, logging out:', error);
+
+ // Очищаем все токены
+ clearTokens();
+
+ // Перенаправляем на страницу логина с флагом ошибки
+ window.location.href = '/login?error=session_expired';
 }
 
 // Экспортируем API сервиса
 export default {
-  getAccessToken,
-  getRefreshToken,
-  saveTokens,
-  clearTokens,
-  synchronizeTokens,
-  isAuthenticated,
-  decodeToken,
-  checkTokenExpiration
+ setUserType,
+ getUserType,
+ getAccessToken,
+ getRefreshToken,
+ saveTokens,
+ clearTokens,
+ synchronizeTokens,
+ isAuthenticated,
+ decodeToken,
+ checkTokenExpiration,
+ getRefreshEndpoint,
+ getProjectIdFromUrl,
+ handleRefreshFailure
 };

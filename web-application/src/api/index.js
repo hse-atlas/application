@@ -36,6 +36,12 @@ const refreshTokens = async () => {
       throw new Error('No refresh token available');
     }
 
+    // Определяем эндпоинт обновления токенов на основе типа пользователя
+    const projectId = tokenService.getProjectIdFromUrl();
+    const refreshEndpoint = tokenService.getRefreshEndpoint(projectId);
+
+    console.log(`Using refresh endpoint: ${refreshEndpoint}`);
+
     // Создаем новый экземпляр axios без интерсепторов, чтобы избежать рекурсии
     const refreshApi = axios.create({
       baseURL: "/",
@@ -43,13 +49,14 @@ const refreshTokens = async () => {
     });
 
     // Запрос на обновление токенов
-    const response = await refreshApi.post("/api/auth/refresh/", {
+    const response = await refreshApi.post(refreshEndpoint, {
       refresh_token: refreshToken
     });
 
-    // Сохраняем новые токены через сервис
+    // Сохраняем новые токены через сервис (сохраняя тип пользователя)
     const { access_token, refresh_token } = response.data;
-    tokenService.saveTokens({ access_token, refresh_token });
+    const userType = tokenService.getUserType() || 'admin'; // Запасной вариант
+    tokenService.saveTokens({ access_token, refresh_token }, userType);
 
     console.log('%c[Token] ✅ Tokens refreshed successfully!', 'background: #f6ffed; color: #52c41a; padding: 2px 4px; border-radius: 2px;', {
       access_token_starts_with: access_token.substring(0, 15) + '...',
@@ -59,11 +66,9 @@ const refreshTokens = async () => {
     return access_token;
   } catch (error) {
     console.log('%c[Token] ❌ Token refresh failed', 'background: #fff2f0; color: #f5222d; padding: 2px 4px; border-radius: 2px;', error);
-    // При ошибке обновления, очищаем токены
-    tokenService.clearTokens();
 
-    // Редирект на страницу логина
-    window.location.href = '/login';
+    // Используем обработчик ошибок из tokenService
+    tokenService.handleRefreshFailure(error);
     throw error;
   }
 };
@@ -137,7 +142,6 @@ api.interceptors.request.use(
   }
 );
 
-// Проверка срока действия access_token и проактивное обновление
 export const checkAndRefreshTokenIfNeeded = async () => {
   try {
     // Проверяем срок действия токена через сервис
@@ -145,6 +149,8 @@ export const checkAndRefreshTokenIfNeeded = async () => {
 
     if (!tokenInfo.isValid) {
       console.log('%c[Token] ❌ Token not valid', 'color: #f5222d;');
+      // Если токен недействителен, запускаем логаут
+      tokenService.handleRefreshFailure(new Error('Token expired'));
       return;
     }
 

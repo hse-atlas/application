@@ -183,3 +183,131 @@ async def get_admin_profile(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving admin profile"
         )
+
+
+@router.post("/refresh/", response_model=TokenResponse)
+@limiter.limit("20/minute")
+async def admin_token_refresh(
+        request: Request,
+        response: Response,
+        refresh_data: dict = None,
+        db: AsyncSession = Depends(get_async_session)
+):
+    """
+    Обновление токенов администратора с использованием refresh токена.
+    """
+    logger.info("Admin token refresh request received")
+
+    # Получаем refresh token из разных источников
+    refresh_token = None
+
+    # 1. Из body запроса, если передан
+    if refresh_data and "refresh_token" in refresh_data:
+        refresh_token = refresh_data["refresh_token"]
+        logger.info("Refresh token found in request body")
+
+    # 2. Из cookie для админских токенов
+    if not refresh_token:
+        refresh_token = request.cookies.get("admins_refresh_token")
+        if refresh_token:
+            logger.info("Refresh token found in admin cookies")
+
+    # 3. Из заголовка Authorization
+    if not refresh_token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            refresh_token = auth_header.replace("Bearer ", "")
+            logger.info("Refresh token found in Authorization header")
+
+    if not refresh_token:
+        logger.warning("Refresh token not provided")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Refresh token not provided"
+        )
+
+    try:
+        # Проверяем, что токен принадлежит администратору
+        payload = await decode_token(refresh_token)
+
+        if payload.get("type") != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Проверяем, что пользователь существует в таблице администраторов
+        admin_result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
+        admin = admin_result.scalar_one_or_none()
+
+        if not admin:
+            logger.warning(f"Failed refresh attempt: ID {user_id} not found in admins table")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid admin token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Вызываем функцию обновления токенов
+        logger.info(f"Refreshing admin tokens for ID: {user_id}")
+
+        # Отзываем использованный refresh токен
+        await revoke_token(refresh_token, delay_seconds=0)  # Сразу отзываем без задержки
+
+        # Создаем новые токены только если user_id валидный
+        access_token = await create_access_token({"sub": user_id})
+        new_refresh_token = await create_refresh_token({"sub": user_id})
+
+        tokens = {
+            "access_token": access_token,
+            "refresh_token": new_refresh_token,
+            "token_type": "bearer",
+            "sub": user_id,
+        }
+
+        # Устанавливаем новые токены в cookie, всегда с префиксом admins_
+        response.set_cookie(
+            key="admins_access_token",
+            value=tokens["access_token"],
+            httponly=True,
+            secure=True,
+            samesite="strict"
+        )
+
+        response.set_cookie(
+            key="admins_refresh_token",
+            value=tokens["refresh_token"],
+            httponly=True,
+            secure=True,
+            samesite="strict"
+        )
+
+        logger.info("Admin tokens successfully refreshed")
+
+        # Возвращаем новые токены в теле ответа
+        return TokenResponse(
+            access_token=tokens["access_token"],
+            refresh_token=tokens["refresh_token"],
+            token_type="bearer"
+        )
+
+    except HTTPException as e:
+        # Перебрасываем ошибку дальше
+        logger.error(f"HTTP exception during admin token refresh: {e.detail}")
+        raise e
+    except Exception as e:
+        # Логируем неожиданную ошибку
+        logger.error(f"Unexpected error during admin token refresh: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to refresh admin tokens"
+        )

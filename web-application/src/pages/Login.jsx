@@ -24,7 +24,7 @@ const Login = () => {
 
       const { access_token, refresh_token } = response.data;
 
-      // Используем новый tokenService вместо прямой записи в localStorage
+      // Сохраняем токены и явно указываем, что мы авторизуемся как админ
       tokenService.saveTokens({ access_token, refresh_token }, "admin");
 
       tokenRefreshService.start();

@@ -27,17 +27,17 @@ async def get_async_session() -> AsyncSession:
 
 @router.post("/refresh/", response_model=TokenResponse)
 @limiter.limit("20/minute")
-async def token_refresh(
+async def token_refresh_redirect(
         request: Request,
         response: Response,
         refresh_data: dict = None,
         db: AsyncSession = Depends(get_async_session)
 ):
     """
-    Обновление токенов с использованием refresh токена.
-    Токен может быть получен из тела запроса, cookie или заголовка.
+    Перенаправление на соответствующий эндпоинт обновления токенов.
+    Оставлен для обратной совместимости.
     """
-    logger.info("Token refresh request received")
+    logger.info("Deprecated token refresh endpoint used")
 
     # Получаем refresh token из разных источников
     refresh_token = None
@@ -45,21 +45,16 @@ async def token_refresh(
     # 1. Из body запроса, если передан
     if refresh_data and "refresh_token" in refresh_data:
         refresh_token = refresh_data["refresh_token"]
-        logger.info("Refresh token found in request body")
 
     # 2. Из cookie, если не найден в body
     if not refresh_token:
         refresh_token = request.cookies.get("admins_refresh_token") or request.cookies.get("users_refresh_token")
-        if refresh_token:
-            cookie_type = "admins_refresh_token" if "admins_refresh_token" in request.cookies else "users_refresh_token"
-            logger.info(f"Refresh token found in cookies: {cookie_type}")
 
-    # 3. Из заголовка Authorization, если не найден в cookie и body
+    # 3. Из заголовка Authorization
     if not refresh_token:
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
             refresh_token = auth_header.replace("Bearer ", "")
-            logger.info("Refresh token found in Authorization header")
 
     if not refresh_token:
         logger.warning("Refresh token not provided")
@@ -69,54 +64,50 @@ async def token_refresh(
         )
 
     try:
-        # Вызываем функцию обновления токенов
-        logger.info("Refreshing tokens")
+        # Декодируем токен, чтобы определить тип пользователя
+        payload = await decode_token(refresh_token)
+        user_id = payload.get("sub")
 
-        # Логируем начало токена для отладки
-        token_preview = refresh_token[:10] + "..." if refresh_token else "None"
-        logger.debug(f"Refresh token starts with: {token_preview}")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
-        tokens = await refresh_tokens(refresh_token, db)
-        logger.info("Tokens successfully refreshed")
+        # Проверяем тип пользователя
+        admin_result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
+        admin = admin_result.scalar_one_or_none()
 
-        # Устанавливаем новые токены в cookie
-        is_admin = "admins_" in request.cookies.get("admins_refresh_token", "") if request.cookies else False
-        token_prefix = "admins_" if is_admin else "users_"
-        logger.info(f"Setting cookies with token prefix: {token_prefix}")
+        if admin:
+            # Перенаправляем на эндпоинт для администраторов
+            from app.admin_auth import admin_token_refresh
+            return await admin_token_refresh(request, response, refresh_data, db)
+        else:
+            # Пытаемся найти пользователя
+            user_result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
+            user = user_result.scalar_one_or_none()
 
-        response.set_cookie(
-            key=f"{token_prefix}access_token",
-            value=tokens["access_token"],
-            httponly=True,
-            secure=True,
-            samesite="strict"
-        )
-
-        response.set_cookie(
-            key=f"{token_prefix}refresh_token",
-            value=tokens["refresh_token"],
-            httponly=True,
-            secure=True,
-            samesite="strict"
-        )
-
-        logger.info("Cookies set with new tokens")
-
-        # Возвращаем новые токены в теле ответа
-        return TokenResponse(
-            access_token=tokens["access_token"],
-            refresh_token=tokens["refresh_token"],
-            token_type="bearer"
-        )
+            if user:
+                # Перенаправляем на эндпоинт для пользователей
+                from app.user_auth import user_token_refresh
+                return await user_token_refresh(request, user.project_id, response, refresh_data, db)
+            else:
+                logger.warning(f"User ID {user_id} not found in database")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
     except HTTPException as e:
         # Перебрасываем ошибку дальше
-        logger.error(f"HTTP exception during token refresh: {e.detail}")
+        logger.error(f"HTTP exception in token refresh redirect: {e.detail}")
         raise e
     except Exception as e:
         # Логируем неожиданную ошибку
-        logger.error(f"Unexpected error during token refresh: {str(e)}", exc_info=True)
+        logger.error(f"Unexpected error in token refresh redirect: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to refresh tokens"
+            detail="Failed to redirect token refresh"
         )

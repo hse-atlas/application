@@ -165,7 +165,7 @@ async def decode_token(token: str) -> Dict[str, Any]:
 
 
 # Функция для отзыва токена (добавление в черный список)
-async def revoke_token(token: str, delay_seconds: int = 5):
+async def revoke_token(token: str, delay_seconds: int = 0):
     """
     Отзыв токена с опциональной задержкой
 
@@ -191,18 +191,11 @@ async def revoke_token(token: str, delay_seconds: int = 5):
             logger.info(f"Token {jti} already in blacklist, skipping")
             return False
 
-        # Применяем задержку для добавления в черный список
-        if delay_seconds > 0:
-            logger.info(f"Scheduling token revocation with {delay_seconds}s delay: JTI={jti}")
-            # Используем asyncio.create_task для отложенного выполнения
-            asyncio.create_task(delayed_revocation(jti, exp, delay_seconds))
-            return True
-        else:
-            # Стандартное немедленное добавление в черный список
-            ttl = max(1, int(exp - now))
-            logger.info(f"Revoking token immediately: JTI={jti}, TTL={ttl}")
-            await redis_client.setex(f"blacklist:{jti}", ttl, "1")
-            return True
+        # Стандартное немедленное добавление в черный список
+        ttl = max(1, int(exp - now))
+        logger.info(f"Revoking token immediately: JTI={jti}, TTL={ttl}")
+        await redis_client.setex(f"blacklist:{jti}", ttl, "1")
+        return True
     except Exception as e:
         logger.error(f"Error during token revocation: {str(e)}")
         return False
@@ -295,13 +288,17 @@ async def should_refresh_token(payload) -> bool:
     return need_refresh
 
 
-# Middleware для проверки и обновления токенов - модифицированная версия с "скользящим окном"
+# Middleware для проверки и обновления токенов
 async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async_session)):
     logger.info(f"Auth middleware check for path: {request.url.path}")
 
     # Получаем токены из cookies или заголовка Authorization
-    access_token = request.cookies.get("admins_access_token") or request.cookies.get("users_access_token")
-    logger.info(f"Access token from cookies: {'Found' if access_token else 'Not found'}")
+    admin_access_token = request.cookies.get("admins_access_token")
+    user_access_token = request.cookies.get("users_access_token")
+    access_token = admin_access_token or user_access_token
+
+    logger.info(f"Admin token from cookies: {'Found' if admin_access_token else 'Not found'}")
+    logger.info(f"User token from cookies: {'Found' if user_access_token else 'Not found'}")
 
     # Или в заголовке Authorization
     if not access_token:
@@ -350,202 +347,71 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
 
         logger.info(f"User ID from token: {user_id}")
 
-        # Определяем тип пользователя (admin или user)
+        # Сначала проверяем, существует ли пользователь как администратор
+        admin_result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
+        admin = admin_result.scalar_one_or_none()
+
+        # Проверяем, существует ли пользователь как обычный пользователь
+        user_result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
+        user = user_result.scalar_one_or_none()
+
+        # Определяем фактический тип пользователя, приоритет - администратор
+        if admin:
+            logger.info(f"Admin found: ID={admin.id}, login={admin.login}, email={admin.email}")
+            request.state.user = admin
+            request.state.user_type = "admin"
+            actual_user = admin
+        elif user:
+            logger.info(f"User found: ID={user.id}, login={user.login}, email={user.email}")
+            request.state.user = user
+            request.state.user_type = "user"
+            actual_user = user
+        else:
+            logger.warning(f"No user or admin found with ID {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Проверяем, соответствует ли тип токена (из cookie) типу пользователя
+        token_from_admin_cookie = access_token == admin_access_token
+        cookie_type_mismatch = (token_from_admin_cookie and request.state.user_type != "admin") or \
+                               (not token_from_admin_cookie and request.state.user_type == "admin")
+
+        if cookie_type_mismatch:
+            logger.warning(
+                f"Token cookie type ({token_from_admin_cookie}) doesn't match user type ({request.state.user_type})")
+
+        # Проверяем доступ к защищенным маршрутам
         is_admin_route = any([
             request.url.path.startswith("/api/auth/admin"),  # Маршруты аутентификации админа
             request.url.path.startswith("/api/projects"),  # Маршруты управления проектами
             request.url.path.startswith("/api/users"),  # Маршруты управления пользователями
-            request.url.path == "/api/debug/token-info",  # Маршруты отладки
-            request.url.path == "/api/debug/oauth-status",
-            request.url.path == "/api/debug/validate-token"
+            request.url.path.startswith("/api/debug/")  # Маршруты отладки
         ])
-        logger.info(f"Is admin route: {is_admin_route}")
 
-        # Определяем user_type для логирования
-        user_type = None
+        if is_admin_route and request.state.user_type != "admin":
+            logger.warning(f"Access attempt to admin route {request.url.path} by non-admin user {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Administrator privileges required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
-        if is_admin_route:
-            logger.info(f"Looking for admin with ID: {user_id}")
-            result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
-            user = result.scalar_one_or_none()
-            if not user:
-                logger.warning(f"Admin with ID {user_id} not found in database")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Admin not found",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            logger.info(f"Admin found: ID={user.id}, login={user.login}, email={user.email}")
-            # Добавляем информацию о пользователе в request.state
-            request.state.user = user
-            request.state.user_type = "admin"
-            user_type = "admin"
-        else:
-            logger.info(f"Looking for user with ID: {user_id}")
-            result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
-            user = result.scalar_one_or_none()
-            if not user:
-                logger.warning(f"User with ID {user_id} not found in database")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="User not found",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            logger.info(f"User found: ID={user.id}, login={user.login}, email={user.email}")
-            # Добавляем информацию о пользователе в request.state
-            request.state.user = user
-            request.state.user_type = "user"
-            user_type = "user"
-
-        # СКОЛЬЗЯЩЕЕ ОКНО: проверяем, нужно ли обновить токен
-        # Определяем, является ли запрос результатом OAuth-редиректа
-        is_oauth_redirect = (
-                request.url.path == "/" and
-                (request.query_params.get("access_token") or request.query_params.get("refresh_token"))
-        )
-
-        if user_type == "admin" and await should_refresh_token(payload) and not is_oauth_redirect:
-            logger.info("Token requires refresh (sliding window)")
-            # Создаем новые токены для скользящего окна только для админов
-            new_access_token = await create_access_token({"sub": user_id})
-            new_refresh_token = await create_refresh_token({"sub": user_id})
-            logger.info(f"New tokens created: access={new_access_token[:10]}..., refresh={new_refresh_token[:10]}...")
-
-            # Устанавливаем новые токены в request.state, чтобы они были добавлены в ответ
-            request.state.new_access_token = new_access_token
-            request.state.new_refresh_token = new_refresh_token
-
-            # Отзываем старый токен с задержкой в 5 секунд,
-            # чтобы у клиента было время получить и сохранить новые токены
-            logger.info("Scheduling old token revocation with delay")
-            await revoke_token(access_token, delay_seconds=5)
-
-        logger.info(f"Auth middleware check completed successfully for {user_type}")
-        return user
+        logger.info(f"Auth middleware check completed successfully for {request.state.user_type}")
+        return actual_user
 
     except HTTPException as e:
         logger.warning(f"HTTP exception in auth middleware: {e.detail}")
-        # Проверяем refresh токен
-        refresh_token = request.cookies.get("admins_refresh_token") or request.cookies.get("users_refresh_token")
-        logger.info(f"Refresh token from cookies: {'Found' if refresh_token else 'Not found'}")
-
-        if not refresh_token:
-            # Если нет refresh токена, возвращаем исходную ошибку
-            if request.url.path.startswith("/api/protected"):
-                logger.warning(f"Protected route {request.url.path} accessed without refresh token")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Not authenticated",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            return None
-
-        try:
-            # Декодируем и проверяем refresh токен
-            logger.info("Attempting to use refresh token")
-            refresh_payload = await decode_token(refresh_token)
-
-            # Проверяем, что это refresh токен
-            if refresh_payload.get("type") != "refresh":
-                logger.warning(f"Expected refresh token, but got {refresh_payload.get('type')}")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid token type",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-
-            # Получаем jti для проверки в Redis
-            jti = refresh_payload.get("jti")
-            logger.info(f"Checking refresh token JTI: {jti}")
-            if not jti or not await redis_client.exists(f"refresh_token:{jti}"):
-                logger.warning(f"Invalid refresh token JTI: {jti}")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid refresh token",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-
-            # Получаем user_id из токена
-            user_id = refresh_payload.get("sub")
-            if not user_id:
-                logger.warning("Refresh token missing 'sub' claim")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid token payload",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-
-            logger.info(f"User ID from refresh token: {user_id}")
-
-            # Отзываем использованный refresh токен (one-time use)
-            logger.info("Revoking used refresh token")
-            await revoke_token(refresh_token)
-
-            # Создаем новую пару токенов
-            logger.info("Creating new tokens using refresh token")
-            new_access_token = await create_access_token({"sub": user_id})
-            new_refresh_token = await create_refresh_token({"sub": user_id})
-            logger.info(f"New tokens created: access={new_access_token[:10]}..., refresh={new_refresh_token[:10]}...")
-
-            # Устанавливаем новые токены в ответе
-            request.state.new_access_token = new_access_token
-            request.state.new_refresh_token = new_refresh_token
-
-            # Определяем тип пользователя
-            is_admin_route = any([
-                request.url.path.startswith("/api/auth/admin"),  # Маршруты аутентификации админа
-                request.url.path.startswith("/api/projects"),  # Маршруты управления проектами
-                request.url.path.startswith("/api/users"),  # Маршруты управления пользователями
-                request.url.path == "/api/debug/token-info",  # Маршруты отладки
-                request.url.path == "/api/debug/oauth-status",
-                request.url.path == "/api/debug/validate-token"
-            ])
-            logger.info(f"Is admin route (refresh flow): {is_admin_route}")
-
-            if is_admin_route:
-                logger.info(f"Looking for admin with ID: {user_id}")
-                result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
-                user = result.scalar_one_or_none()
-                if not user:
-                    logger.warning(f"Admin with ID {user_id} not found in database")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Admin not found",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
-                logger.info(f"Admin found: ID={user.id}, login={user.login}, email={user.email}")
-                # Добавляем информацию о пользователе в request.state
-                request.state.user = user
-                request.state.user_type = "admin"
-            else:
-                logger.info(f"Looking for user with ID: {user_id}")
-                result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
-                user = result.scalar_one_or_none()
-                if not user:
-                    logger.warning(f"User with ID {user_id} not found in database")
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="User not found",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
-                logger.info(f"User found: ID={user.id}, login={user.login}, email={user.email}")
-                # Добавляем информацию о пользователе в request.state
-                request.state.user = user
-                request.state.user_type = "user"
-
-            logger.info("Token refresh completed successfully")
-            return user
-
-        except (HTTPException, JWTError) as e:
-            # Если refresh токен недействителен, требуем повторную аутентификацию
-            logger.error(f"Error during refresh token handling: {str(e)}")
-            if request.url.path.startswith("/api/protected"):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid refresh token. Please login again.",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            return None
+        raise  # Просто перебрасываем исключение, отдельная логика обновления теперь в специальных эндпоинтах
+    except Exception as e:
+        logger.error(f"Unexpected error in auth middleware: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication error",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 # Функция для обновления токенов с использованием refresh токена
