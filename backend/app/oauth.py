@@ -357,73 +357,137 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
 # Обработка OAuth для пользователей
 async def process_user_oauth(email: str, name: str, provider: str, provider_user_id: str, project_id: UUID,
                              session: AsyncSession):
+    """
+    Обрабатывает callback от OAuth провайдера для пользователя проекта.
+    Находит или создает пользователя, генерирует токены и перенаправляет
+    на URL, указанный в настройках проекта (project.url).
+    """
     logger.info(f"Processing user OAuth for email={email}, project_id={project_id}, provider={provider}, provider_id={provider_user_id}")
 
-    # Используем session.get для проверки проекта, т.к. он нужен только для проверки
+    # 1. Получаем проект из БД, он нужен для получения redirect URL
     project = await session.get(ProjectsBase, str(project_id))
     if not project:
         logger.error(f"Project {project_id} not found during user OAuth processing.")
-        raise HTTPException(status_code=404, detail="Project not found")
+        # Возвращаем 404, т.к. проект, на который ссылается state, не существует
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project context not found")
 
+    # 2. Логика поиска/создания/обновления пользователя
     user = await find_one_or_none_user(oauth_provider=provider, oauth_user_id=provider_user_id, project_id=str(project_id))
 
     if not user:
+        # Если не нашли по ID провайдера, ищем по email в этом проекте
         user = await find_one_or_none_user(email=email, project_id=str(project_id))
         if user:
+            # Пользователь существует, но без OAuth связи - связываем
             if not user.oauth_provider:
                 logger.info(f"Found existing user by email {email} in project {project_id}, linking OAuth provider {provider} (ID: {provider_user_id})")
+                # Проверяем статус перед связыванием
+                if user.status == UserStatus.BLOCKED:
+                     logger.warning(f"OAuth login failed for existing user {user.id} ({email}): account is blocked.")
+                     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is blocked")
                 user.oauth_provider = provider
                 user.oauth_user_id = provider_user_id
-                user.last_login = datetime.utcnow()
+                user.last_login = datetime.utcnow() # Используем naive UTC
                 await session.commit()
-                 # Изменено: Убираем refresh
-                # await session.refresh(user)
+                 # Refresh не нужен после commit
             else:
+                 # Пользователь с таким email уже привязан к другому OAuth в этом проекте
                  logger.error(f"User email {email} in project {project_id} already linked to another OAuth account ({user.oauth_provider}). Cannot link {provider}.")
+                 # Возвращаем конфликт
                  raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already linked to another authentication method in this project.")
         else:
+             # Пользователя нет - создаем нового
             logger.info(f"User with email {email} not found in project {project_id}, creating new user via OAuth {provider}")
             login = name if name else email.split('@')[0]
+            # Проверка уникальности логина в рамках проекта
             counter = 0
             base_login = login
             while await find_one_or_none_user(login=login, project_id=str(project_id)):
                 counter += 1; login = f"{base_login}_{counter}"
+                logger.warning(f"Login '{base_login}' exists in project {project_id}, trying '{login}'")
+
             user_data = {
-                "email": email, "login": login, "password": None,
-                "project_id": str(project_id), "role": "user", "status": UserStatus.ACTIVE,
-                "oauth_provider": provider, "oauth_user_id": provider_user_id,
-                "last_login": datetime.utcnow()
+                "email": email, "login": login, "password": None, # Пароль не нужен для OAuth
+                "project_id": str(project_id), # Сохраняем как строку
+                "role": "user", # Роль по умолчанию
+                "status": UserStatus.ACTIVE, # Статус по умолчанию
+                "oauth_provider": provider,
+                "oauth_user_id": provider_user_id,
+                "last_login": datetime.utcnow() # Используем naive UTC
             }
-            user = await add_user(**user_data) # add_user возвращает персистентный объект
-            logger.info(f"New user created via OAuth: ID={user.id}, login={user.login}, project={project_id}")
-            # Refresh не нужен
+            # Используем add_user из app.core, который обрабатывает commit/rollback
+            try:
+                user = await add_user(**user_data)
+                logger.info(f"New user created via OAuth: ID={user.id}, login={user.login}, project={project_id}")
+            except Exception as add_exc:
+                 logger.error(f"Failed to add new user via OAuth: {add_exc}", exc_info=True)
+                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create user account")
+
     else:
+         # Пользователь найден по ID провайдера - просто обновляем вход
          logger.info(f"Found existing user by OAuth {provider} ID {provider_user_id} in project {project_id}. Updating last login.")
+         # Проверяем статус перед обновлением
          if user.status == UserStatus.BLOCKED:
               logger.warning(f"OAuth login failed for user {user.id} ({email}): account is blocked.")
               raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is blocked")
-         user.last_login = datetime.utcnow()
+         user.last_login = datetime.utcnow() # Используем naive UTC
          await session.commit()
-         # Изменено: Убираем refresh
-         # await session.refresh(user)
+         # Refresh не нужен после commit
 
-        # Создаем JWT токены
-    logger.info(f"Creating JWT tokens for user ID: {user.id}, role: {user.role}") # Логируем роль
+    # 3. Создаем JWT токены
+    logger.info(f"Creating JWT tokens for user ID: {user.id}, role: {user.role}")
     try:
-        # Изменено: Добавляем 'role' в данные для токена
+        # Добавляем роль пользователя в payload токена
         token_data = {"sub": str(user.id), "role": user.role}
-
-        # Изменено: Передаем token_data и user_type="user"
         access_token = await create_access_token(token_data, user_type="user")
         refresh_token = await create_refresh_token(token_data, user_type="user")
-
         logger.info(f"Tokens created for user {user.id}")
 
-        redirect_url = f"/?type=user&project_id={project_id}&access_token={access_token}&refresh_token={refresh_token}"
-        response = RedirectResponse(url=redirect_url)
-        logger.info(f"Redirecting user to: {redirect_url}")
+        # 4. Формируем URL для редиректа на внешний сайт
+        base_redirect_url = project.url # Получаем URL из настроек проекта
+        logger.debug(f"Project URL from DB for redirect: {base_redirect_url}")
+
+        # Обрабатываем случай, если URL не задан
+        if not base_redirect_url:
+            # Выдаем ошибку, т.к. редирект на внешний сайт ожидается
+            logger.error(f"Redirect URL is not configured for project {project_id}. Cannot complete OAuth flow.")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Project redirect URL not configured")
+            # Альтернатива: редирект на ваш дефолтный URL, если это допустимо
+            # base_redirect_url = "/"
+            # logger.warning(f"Project {project_id} URL is not set. Redirecting to default '{base_redirect_url}'.")
+
+        # Формируем query-параметры с токенами
+        query_params = {
+            "access_token": access_token,
+            "refresh_token": refresh_token
+            # Можно добавить и другие параметры при необходимости
+        }
+        query_string = urlencode(query_params)
+
+        # Аккуратно добавляем query-параметры к базовому URL
+        try:
+            url_parts = urlparse(base_redirect_url)
+            # Проверяем, является ли URL валидным (хотя бы базово)
+            if not url_parts.scheme or not url_parts.netloc:
+                 logger.error(f"Invalid redirect URL configured for project {project_id}: {base_redirect_url}")
+                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid project redirect URL configured")
+
+            # Используем простой вариант - перезаписываем query, если он был
+            final_redirect_url = url_parts._replace(query=query_string).geturl()
+        except ValueError as url_err:
+             logger.error(f"Error parsing redirect URL for project {project_id}: {base_redirect_url} - {url_err}", exc_info=True)
+             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error constructing redirect URL")
+
+
+        # 5. Создаем RedirectResponse
+        response = RedirectResponse(url=final_redirect_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+        logger.info(f"Redirecting user to external URL: {final_redirect_url}")
+
+        # Cookie больше не устанавливаем
+
         return response
-    
+
     except Exception as e:
-        logger.error(f"Error creating JWT tokens for user {user.id}: {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate authentication tokens")
+        # Ловим любые ошибки при генерации токенов или URL
+        logger.error(f"Error creating JWT tokens or redirect URL for user {getattr(user, 'id', 'N/A')}: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Authentication processing failed")
