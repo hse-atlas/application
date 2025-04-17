@@ -129,7 +129,6 @@ const UserLoginEmbed = () => {
 
     return (
         <div style={{ padding: 20, maxWidth: 400, margin: "0 auto" }}>
-            <h2>Login</h2>
             <Form
                 name="login"
                 layout="vertical"
