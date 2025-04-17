@@ -34,7 +34,7 @@ function AppContent() {
       window.history.replaceState({}, document.title, cleanUrl);
 
       // Отложенный запуск сервиса обновления токенов
-      // Это дает время для завершения всех редиректов и установки cookies
+      // Это дает время для завершения всех редиректов
       console.log("OAuth detection: Delaying token refresh service startup");
       setTimeout(() => {
         console.log("Starting token refresh service after OAuth redirect");
@@ -73,7 +73,7 @@ function AppContent() {
 function App() {
   return (
     <Router>
-      <AppContent />  {/* Теперь useLocation работает корректно */}
+      <AppContent />
     </Router>
   );
 }

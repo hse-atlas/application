@@ -183,50 +183,6 @@ async def auth_middleware_wrapper(request: Request, call_next):
     return response
 
 
-# Middleware для установки токенов в ответы
-@application.middleware("http")
-async def token_middleware(request: Request, call_next):
-    # Запуск эндпоинта
-    response = await call_next(request)
-
-    # Проверяем наличие новых токенов в request.state
-    if hasattr(request.state, "new_access_token") and request.state.new_access_token:
-        logger.debug("Setting new access token in response",
-                     extra={"path": request.url.path, "user_type": request.state.user_type})
-
-        # Устанавливаем новый access token
-        response.set_cookie(
-            key=(
-                "admins_access_token"
-                if request.state.user_type == "admin"
-                else "users_access_token"
-            ),
-            value=request.state.new_access_token,
-            httponly=True,
-            secure=True,
-            samesite="strict"
-        )
-
-    if hasattr(request.state, "new_refresh_token") and request.state.new_refresh_token:
-        logger.debug("Setting new refresh token in response",
-                     extra={"path": request.url.path, "user_type": request.state.user_type})
-
-        # Устанавливаем новый refresh token
-        response.set_cookie(
-            key=(
-                "admins_refresh_token"
-                if request.state.user_type == "admin"
-                else "users_refresh_token"
-            ),
-            value=request.state.new_refresh_token,
-            httponly=True,
-            secure=True,
-            samesite="strict"
-        )
-
-    return response
-
-
 # Подключаем роутеры
 application.include_router(admin_auth_router)
 application.include_router(user_auth_router)

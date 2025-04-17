@@ -89,7 +89,6 @@ async def admin_registration(
 @limiter.limit("10/minute")  # Ограничение на 10 запросов в минуту с одного IP
 async def admin_auth(
         request: Request,  # Добавляем обязательный аргумент request
-        response: Response,
         admin_data: LoginData,
         db: AsyncSession = Depends(get_async_session)
 ):
@@ -128,26 +127,10 @@ async def admin_auth(
         logger.debug(f"Access token starts with: {access_token[:10]}...")
         logger.debug(f"Refresh token starts with: {refresh_token[:10]}...")
 
-        # Установка токенов в cookie (httponly для безопасности)
-        response.set_cookie(
-            key="admins_access_token",
-            value=access_token,
-            httponly=True,
-            secure=True,  # Только через HTTPS
-            samesite="strict"  # Защита от CSRF
-        )
+        # Больше не устанавливаем токены в cookie
+        logger.info(f"Tokens generated for admin id={admin.id}")
 
-        response.set_cookie(
-            key="admins_refresh_token",
-            value=refresh_token,
-            httponly=True,
-            secure=True,
-            samesite="strict"
-        )
-
-        logger.info(f"Cookies set for admin id={admin.id}")
-
-        # Возвращаем токены также в теле ответа (для использования в мобильных приложениях)
+        # Возвращаем токены только в теле ответа
         return TokenResponse(
             access_token=access_token,
             refresh_token=refresh_token,
@@ -191,7 +174,6 @@ async def get_admin_profile(
 @limiter.limit("20/minute")
 async def admin_token_refresh(
         request: Request,
-        response: Response,
         refresh_data: dict = None,
         db: AsyncSession = Depends(get_async_session)
 ):
@@ -200,7 +182,7 @@ async def admin_token_refresh(
     """
     logger.info("Admin token refresh request received")
 
-    # Получаем refresh token из разных источников
+    # Получаем refresh token только из тела запроса
     refresh_token = None
 
     # 1. Из body запроса, если передан
@@ -208,13 +190,7 @@ async def admin_token_refresh(
         refresh_token = refresh_data["refresh_token"]
         logger.info("Refresh token found in request body")
 
-    # 2. Из cookie для админских токенов
-    if not refresh_token:
-        refresh_token = request.cookies.get("admins_refresh_token")
-        if refresh_token:
-            logger.info("Refresh token found in admin cookies")
-
-    # 3. Из заголовка Authorization
+    # 2. Из заголовка Authorization, если не найден в body
     if not refresh_token:
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
@@ -287,22 +263,7 @@ async def admin_token_refresh(
             "sub": user_id,
         }
 
-        # Устанавливаем новые токены в cookie, всегда с префиксом admins_
-        response.set_cookie(
-            key="admins_access_token",
-            value=tokens["access_token"],
-            httponly=True,
-            secure=True,
-            samesite="strict"
-        )
-
-        response.set_cookie(
-            key="admins_refresh_token",
-            value=tokens["refresh_token"],
-            httponly=True,
-            secure=True,
-            samesite="strict"
-        )
+        # Больше не устанавливаем cookies
 
         logger.info("Admin tokens successfully refreshed")
 

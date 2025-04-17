@@ -93,7 +93,6 @@ async def user_login(
         request: Request,
         project_id: UUID,
         user_data: LoginData,
-        response: Response,
         db: AsyncSession = Depends(get_async_session)
 ):
     # Поиск пользователя по email и project_id
@@ -129,22 +128,7 @@ async def user_login(
     access_token = await create_access_token({"sub": str(user.id)}, user_type="user")
     refresh_token = await create_refresh_token({"sub": str(user.id)}, user_type="user")
 
-    # Установка токенов в cookie
-    response.set_cookie(
-        key="users_access_token",
-        value=access_token,
-        httponly=True,
-        secure=True,
-        samesite="strict"
-    )
-
-    response.set_cookie(
-        key="users_refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=True,
-        samesite="strict"
-    )
+    # Больше НЕ устанавливаем токены в cookie
 
     return TokenResponse(
         access_token=access_token,
@@ -158,7 +142,6 @@ async def user_login(
 async def user_token_refresh(
         request: Request,
         project_id: UUID,
-        response: Response,
         refresh_data: dict = None,
         db: AsyncSession = Depends(get_async_session)
 ):
@@ -167,7 +150,7 @@ async def user_token_refresh(
     """
     logger.info(f"User token refresh request received for project: {project_id}")
 
-    # Получаем refresh token из разных источников
+    # Получаем refresh token только из тела запроса или заголовка
     refresh_token = None
 
     # 1. Из body запроса, если передан
@@ -175,13 +158,7 @@ async def user_token_refresh(
         refresh_token = refresh_data["refresh_token"]
         logger.info("Refresh token found in request body")
 
-    # 2. Из cookie для пользовательских токенов
-    if not refresh_token:
-        refresh_token = request.cookies.get("users_refresh_token")
-        if refresh_token:
-            logger.info("Refresh token found in user cookies")
-
-    # 3. Из заголовка Authorization
+    # 2. Из заголовка Authorization
     if not refresh_token:
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
@@ -259,22 +236,7 @@ async def user_token_refresh(
             "sub": user_id,
         }
 
-        # Устанавливаем новые токены в cookie, всегда с префиксом users_
-        response.set_cookie(
-            key="users_access_token",
-            value=tokens["access_token"],
-            httponly=True,
-            secure=True,
-            samesite="strict"
-        )
-
-        response.set_cookie(
-            key="users_refresh_token",
-            value=tokens["refresh_token"],
-            httponly=True,
-            secure=True,
-            samesite="strict"
-        )
+        # Больше НЕ устанавливаем cookies
 
         logger.info("User tokens successfully refreshed")
 

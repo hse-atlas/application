@@ -1,17 +1,16 @@
-from urllib.parse import urlencode
-
-from uuid import UUID
-import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
+from urllib.parse import urlencode
+from uuid import UUID
 
+import httpx
 from app.config import get_oauth_config
 from app.core import add_admin, add_user
 from app.database import async_session_maker
 from app.jwt_auth import create_access_token, create_refresh_token
 from app.schemas import AdminsBase, UsersBase
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix='/api/auth/oauth', tags=['OAuth Authentication'])
 
@@ -360,23 +359,7 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
     # Создаем ответ с перенаправлением и передаем токены как параметры URL
     response = RedirectResponse(url=f"/?access_token={access_token}&refresh_token={refresh_token}")
 
-    # Устанавливаем токены в cookie
-    response.set_cookie(
-        key="admins_access_token",
-        value=access_token,
-        httponly=True,
-        secure=True,
-        samesite="strict"
-    )
-    response.set_cookie(
-        key="admins_refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=True,
-        samesite="strict"
-    )
-
-    logger.info("Setting cookies with tokens")
+    # Больше НЕ устанавливаем токены в cookie
     logger.info("OAuth authentication successful, redirecting to dashboard")
 
     return response
@@ -448,20 +431,6 @@ async def process_user_oauth(email: str, name: str, provider: str, provider_user
     # Редирект на страницу приложения/проекта с передачей токенов в URL
     response = RedirectResponse(url=f"/projects/{project_id}?access_token={access_token}&refresh_token={refresh_token}")
 
-    # Устанавливаем токены в cookie
-    response.set_cookie(
-        key="users_access_token",
-        value=access_token,
-        httponly=True,
-        secure=True,
-        samesite="strict"
-    )
-    response.set_cookie(
-        key="users_refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=True,
-        samesite="strict"
-    )
+    # Больше НЕ устанавливаем токены в cookie
 
     return response

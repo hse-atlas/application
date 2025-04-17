@@ -4,7 +4,7 @@ import tokenService from "../services/tokenService";
 // Создаем экземпляр axios с базовым URL
 const api = axios.create({
   baseURL: window.location.origin,
-  withCredentials: true // Важно для работы с cookie
+  withCredentials: false // Изменяем на false, так как не используем cookies
 });
 
 // Флаг для отслеживания, выполняется ли сейчас обновление токена
@@ -64,7 +64,7 @@ const refreshTokens = async () => {
     // Создаем новый экземпляр axios без интерсепторов, чтобы избежать рекурсии
     const refreshApi = axios.create({
       baseURL: "/",
-      withCredentials: true
+      withCredentials: false
     });
 
     // Запрос на обновление токенов
@@ -91,11 +91,9 @@ const refreshTokens = async () => {
   }
 };
 
-// Добавляем интерсептор для обработки ответов и синхронизации токенов
+// Добавляем интерсептор для обработки ответов
 api.interceptors.response.use(
   (response) => {
-    // Синхронизируем токены после каждого ответа
-    tokenService.synchronizeTokens();
     return response;
   },
   async (error) => {

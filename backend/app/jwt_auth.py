@@ -298,20 +298,11 @@ async def should_refresh_token(payload) -> bool:
 async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async_session)):
     logger.info(f"Auth middleware check for path: {request.url.path}")
 
-    # Получаем токены из cookies или заголовка Authorization
-    admin_access_token = request.cookies.get("admins_access_token")
-    user_access_token = request.cookies.get("users_access_token")
-    access_token = admin_access_token or user_access_token
-
-    logger.info(f"Admin token from cookies: {'Found' if admin_access_token else 'Not found'}")
-    logger.info(f"User token from cookies: {'Found' if user_access_token else 'Not found'}")
-
-    # Или в заголовке Authorization
-    if not access_token:
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            access_token = auth_header.replace("Bearer ", "")
-            logger.info("Access token found in Authorization header")
+    # Получаем токен ТОЛЬКО из заголовка Authorization
+    access_token = None
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        access_token = auth_header.replace("Bearer ", "")
 
     if not access_token:
         logger.info("No access token found in request")
@@ -398,15 +389,6 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Проверяем, соответствует ли тип токена (из cookie) типу пользователя
-        token_from_admin_cookie = access_token == admin_access_token
-        cookie_type_mismatch = (token_from_admin_cookie and request.state.user_type != "admin") or \
-                               (not token_from_admin_cookie and request.state.user_type == "admin")
-
-        if cookie_type_mismatch:
-            logger.warning(
-                f"Token cookie type ({token_from_admin_cookie}) doesn't match user type ({request.state.user_type})")
-
         # Проверяем доступ к защищенным маршрутам
         is_admin_route = any([
             request.url.path.startswith("/api/auth/admin"),  # Маршруты аутентификации админа
@@ -428,7 +410,7 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
 
     except HTTPException as e:
         logger.warning(f"HTTP exception in auth middleware: {e.detail}")
-        raise  # Просто перебрасываем исключение, отдельная логика обновления теперь в специальных эндпоинтах
+        raise  # Просто перебрасываем исключение
     except Exception as e:
         logger.error(f"Unexpected error in auth middleware: {str(e)}")
         raise HTTPException(

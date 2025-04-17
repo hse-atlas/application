@@ -1,39 +1,12 @@
-// tokenService.js - единый сервис для управления токенами
+// Файл: web-application/src/services/tokenService.js
+// Полностью переписанная служба работы с токенами для использования только localStorage
 
 const TOKEN_NAMES = {
-  ADMIN_ACCESS: {
-    cookie: "admins_access_token",
-    storage: "admin_access_token"
-  },
-  ADMIN_REFRESH: {
-    cookie: "admins_refresh_token",
-    storage: "admin_refresh_token"
-  },
-  USER_ACCESS: {
-    cookie: "users_access_token",
-    storage: "user_access_token"
-  },
-  USER_REFRESH: {
-    cookie: "users_refresh_token",
-    storage: "user_refresh_token"
-  }
+  ADMIN_ACCESS: "admin_access_token",
+  ADMIN_REFRESH: "admin_refresh_token",
+  USER_ACCESS: "user_access_token",
+  USER_REFRESH: "user_refresh_token"
 };
-
-/**
- * Получает токен из cookie
- * @param {string} name - имя cookie
- * @returns {string|null} - значение токена или null
- */
-function getTokenFromCookie(name) {
-  const cookies = document.cookie.split(';');
-  for (let cookie of cookies) {
-    const [cookieName, cookieValue] = cookie.trim().split('=');
-    if (cookieName === name) {
-      return cookieValue;
-    }
-  }
-  return null;
-}
 
 /**
  * Декодирует JWT токен без проверки подписи
@@ -80,117 +53,41 @@ function getUserType() {
 }
 
 /**
- * Синхронизирует токены в localStorage и определяет их тип
- */
-function synchronizeTokens() {
-  // Сначала пытаемся определить тип пользователя из токена
-  const userType = getUserTypeFromToken();
-  console.debug(`Synchronizing tokens. User type from token: ${userType}`);
-
-  if (!userType) {
-    console.debug('No user type determined from token, cannot synchronize tokens properly');
-    return;
-  }
-
-  if (userType === 'admin') {
-    // Для админа берем соответствующие куки
-    const accessTokenCookie = getTokenFromCookie(TOKEN_NAMES.ADMIN_ACCESS.cookie);
-    const refreshTokenCookie = getTokenFromCookie(TOKEN_NAMES.ADMIN_REFRESH.cookie);
-
-    if (accessTokenCookie) {
-      localStorage.setItem(TOKEN_NAMES.ADMIN_ACCESS.storage, accessTokenCookie);
-    }
-
-    if (refreshTokenCookie) {
-      localStorage.setItem(TOKEN_NAMES.ADMIN_REFRESH.storage, refreshTokenCookie);
-    }
-
-    // Очищаем пользовательские токены если они есть
-    localStorage.removeItem(TOKEN_NAMES.USER_ACCESS.storage);
-    localStorage.removeItem(TOKEN_NAMES.USER_REFRESH.storage);
-  } else if (userType === 'user') {
-    // Для обычного пользователя берем соответствующие куки
-    const accessTokenCookie = getTokenFromCookie(TOKEN_NAMES.USER_ACCESS.cookie);
-    const refreshTokenCookie = getTokenFromCookie(TOKEN_NAMES.USER_REFRESH.cookie);
-
-    if (accessTokenCookie) {
-      localStorage.setItem(TOKEN_NAMES.USER_ACCESS.storage, accessTokenCookie);
-    }
-
-    if (refreshTokenCookie) {
-      localStorage.setItem(TOKEN_NAMES.USER_REFRESH.storage, refreshTokenCookie);
-    }
-
-    // Очищаем админские токены если они есть
-    localStorage.removeItem(TOKEN_NAMES.ADMIN_ACCESS.storage);
-    localStorage.removeItem(TOKEN_NAMES.ADMIN_REFRESH.storage);
-  }
-}
-
-/**
- * Получает актуальный access токен с предварительной синхронизацией
+ * Получает актуальный access токен из localStorage
  * @returns {string|null} - актуальный access токен или null
  */
 function getAccessToken() {
-  // Определяем тип токена из локального хранилища
-  // Проверяем сначала оба типа токенов - если есть админский, используем его, иначе пользовательский
-  const adminToken = localStorage.getItem(TOKEN_NAMES.ADMIN_ACCESS.storage);
+  // Определяем тип пользователя из существующих токенов
+  const adminToken = localStorage.getItem(TOKEN_NAMES.ADMIN_ACCESS);
   if (adminToken) {
     return adminToken;
   }
 
-  const userToken = localStorage.getItem(TOKEN_NAMES.USER_ACCESS.storage);
+  const userToken = localStorage.getItem(TOKEN_NAMES.USER_ACCESS);
   if (userToken) {
     return userToken;
-  }
-
-  // Если нет токенов в localStorage, проверяем cookies
-  const adminCookieToken = getTokenFromCookie(TOKEN_NAMES.ADMIN_ACCESS.cookie);
-  if (adminCookieToken) {
-    // Синхронизируем с localStorage
-    localStorage.setItem(TOKEN_NAMES.ADMIN_ACCESS.storage, adminCookieToken);
-    return adminCookieToken;
-  }
-
-  const userCookieToken = getTokenFromCookie(TOKEN_NAMES.USER_ACCESS.cookie);
-  if (userCookieToken) {
-    // Синхронизируем с localStorage
-    localStorage.setItem(TOKEN_NAMES.USER_ACCESS.storage, userCookieToken);
-    return userCookieToken;
   }
 
   return null;
 }
 
 /**
- * Получает актуальный refresh токен с предварительной синхронизацией
+ * Получает актуальный refresh токен из localStorage
  * @returns {string|null} - актуальный refresh токен или null
  */
 function getRefreshToken() {
-  // Определяем тип токена по типу пользователя из текущего access токена
+  // Определяем тип пользователя из текущего access токена
   const userType = getUserTypeFromToken();
 
   if (!userType) {
     // Если не можем определить тип из токена, проверяем наличие обоих типов рефреш токенов
-    const adminRefreshToken = localStorage.getItem(TOKEN_NAMES.ADMIN_REFRESH.storage) ||
-                              getTokenFromCookie(TOKEN_NAMES.ADMIN_REFRESH.cookie);
-
+    const adminRefreshToken = localStorage.getItem(TOKEN_NAMES.ADMIN_REFRESH);
     if (adminRefreshToken) {
-      // Синхронизируем с localStorage если токен из cookie
-      if (getTokenFromCookie(TOKEN_NAMES.ADMIN_REFRESH.cookie) === adminRefreshToken) {
-        localStorage.setItem(TOKEN_NAMES.ADMIN_REFRESH.storage, adminRefreshToken);
-      }
       return adminRefreshToken;
     }
 
-    const userRefreshToken = localStorage.getItem(TOKEN_NAMES.USER_REFRESH.storage) ||
-                             getTokenFromCookie(TOKEN_NAMES.USER_REFRESH.cookie);
-
+    const userRefreshToken = localStorage.getItem(TOKEN_NAMES.USER_REFRESH);
     if (userRefreshToken) {
-      // Синхронизируем с localStorage если токен из cookie
-      if (getTokenFromCookie(TOKEN_NAMES.USER_REFRESH.cookie) === userRefreshToken) {
-        localStorage.setItem(TOKEN_NAMES.USER_REFRESH.storage, userRefreshToken);
-      }
       return userRefreshToken;
     }
 
@@ -199,28 +96,14 @@ function getRefreshToken() {
 
   // Если тип известен, выбираем соответствующий токен
   if (userType === 'admin') {
-    const adminRefreshToken = localStorage.getItem(TOKEN_NAMES.ADMIN_REFRESH.storage) ||
-                              getTokenFromCookie(TOKEN_NAMES.ADMIN_REFRESH.cookie);
-
-    if (adminRefreshToken && getTokenFromCookie(TOKEN_NAMES.ADMIN_REFRESH.cookie) === adminRefreshToken) {
-      localStorage.setItem(TOKEN_NAMES.ADMIN_REFRESH.storage, adminRefreshToken);
-    }
-
-    return adminRefreshToken;
+    return localStorage.getItem(TOKEN_NAMES.ADMIN_REFRESH);
   } else {
-    const userRefreshToken = localStorage.getItem(TOKEN_NAMES.USER_REFRESH.storage) ||
-                             getTokenFromCookie(TOKEN_NAMES.USER_REFRESH.cookie);
-
-    if (userRefreshToken && getTokenFromCookie(TOKEN_NAMES.USER_REFRESH.cookie) === userRefreshToken) {
-      localStorage.setItem(TOKEN_NAMES.USER_REFRESH.storage, userRefreshToken);
-    }
-
-    return userRefreshToken;
+    return localStorage.getItem(TOKEN_NAMES.USER_REFRESH);
   }
 }
 
 /**
- * Сохраняет токены в localStorage и в cookies
+ * Сохраняет токены в localStorage
  * @param {Object} tokens - объект с токенами {access_token, refresh_token}
  */
 function saveTokens(tokens) {
@@ -241,16 +124,10 @@ function saveTokens(tokens) {
 
   // Определяем правильные ключи на основе типа пользователя из токена
   const accessStorageKey = userType === 'admin' ?
-    TOKEN_NAMES.ADMIN_ACCESS.storage : TOKEN_NAMES.USER_ACCESS.storage;
+    TOKEN_NAMES.ADMIN_ACCESS : TOKEN_NAMES.USER_ACCESS;
 
   const refreshStorageKey = userType === 'admin' ?
-    TOKEN_NAMES.ADMIN_REFRESH.storage : TOKEN_NAMES.USER_REFRESH.storage;
-
-  const accessCookieName = userType === 'admin' ?
-    TOKEN_NAMES.ADMIN_ACCESS.cookie : TOKEN_NAMES.USER_ACCESS.cookie;
-
-  const refreshCookieName = userType === 'admin' ?
-    TOKEN_NAMES.ADMIN_REFRESH.cookie : TOKEN_NAMES.USER_REFRESH.cookie;
+    TOKEN_NAMES.ADMIN_REFRESH : TOKEN_NAMES.USER_REFRESH;
 
   // Сохраняем в localStorage
   if (access_token) {
@@ -261,32 +138,25 @@ function saveTokens(tokens) {
     localStorage.setItem(refreshStorageKey, refresh_token);
   }
 
-  // Сохраняем в cookies только если их нет или они отличаются
-  if (access_token && getTokenFromCookie(accessCookieName) !== access_token) {
-    document.cookie = `${accessCookieName}=${access_token}; path=/; secure; samesite=strict`;
-  }
-
-  if (refresh_token && getTokenFromCookie(refreshCookieName) !== refresh_token) {
-    document.cookie = `${refreshCookieName}=${refresh_token}; path=/; secure; samesite=strict`;
+  // Удаляем токены другого типа для предотвращения конфликтов
+  if (userType === 'admin') {
+    localStorage.removeItem(TOKEN_NAMES.USER_ACCESS);
+    localStorage.removeItem(TOKEN_NAMES.USER_REFRESH);
+  } else {
+    localStorage.removeItem(TOKEN_NAMES.ADMIN_ACCESS);
+    localStorage.removeItem(TOKEN_NAMES.ADMIN_REFRESH);
   }
 }
 
 /**
- * Удаляет все токены из localStorage и cookies
+ * Удаляет все токены из localStorage
  */
 function clearTokens() {
   // Очищаем localStorage
-  localStorage.removeItem(TOKEN_NAMES.ADMIN_ACCESS.storage);
-  localStorage.removeItem(TOKEN_NAMES.ADMIN_REFRESH.storage);
-  localStorage.removeItem(TOKEN_NAMES.USER_ACCESS.storage);
-  localStorage.removeItem(TOKEN_NAMES.USER_REFRESH.storage);
-
-  // Очищаем cookies
-  const pastDate = new Date(0).toUTCString();
-  document.cookie = `${TOKEN_NAMES.ADMIN_ACCESS.cookie}=; expires=${pastDate}; path=/;`;
-  document.cookie = `${TOKEN_NAMES.ADMIN_REFRESH.cookie}=; expires=${pastDate}; path=/;`;
-  document.cookie = `${TOKEN_NAMES.USER_ACCESS.cookie}=; expires=${pastDate}; path=/;`;
-  document.cookie = `${TOKEN_NAMES.USER_REFRESH.cookie}=; expires=${pastDate}; path=/;`;
+  localStorage.removeItem(TOKEN_NAMES.ADMIN_ACCESS);
+  localStorage.removeItem(TOKEN_NAMES.ADMIN_REFRESH);
+  localStorage.removeItem(TOKEN_NAMES.USER_ACCESS);
+  localStorage.removeItem(TOKEN_NAMES.USER_REFRESH);
 }
 
 /**
@@ -374,7 +244,6 @@ export default {
   getRefreshToken,
   saveTokens,
   clearTokens,
-  synchronizeTokens,
   isAuthenticated,
   decodeToken,
   checkTokenExpiration,
