@@ -345,10 +345,10 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
     else:
         logger.info(f"Admin already exists with ID: {admin.id}, provider: {admin.oauth_provider}")
 
-    # Создаем JWT токены
+    # Создаем JWT токены с указанием типа пользователя "admin"
     logger.info(f"Creating JWT tokens for admin ID: {admin.id}")
-    access_token = await create_access_token({"sub": str(admin.id)})
-    refresh_token = await create_refresh_token({"sub": str(admin.id)})
+    access_token = await create_access_token({"sub": str(admin.id)}, user_type="admin")
+    refresh_token = await create_refresh_token({"sub": str(admin.id)}, user_type="admin")
     logger.info(
         f"Tokens created - Access token starts with: {access_token[:10]}, Refresh token starts with: {refresh_token[:10]}")
 
@@ -436,9 +436,9 @@ async def process_user_oauth(email: str, name: str, provider: str, provider_user
         user.oauth_user_id = provider_user_id
         await session.commit()
 
-    # Создаем JWT токен
-    access_token = await create_access_token({"sub": str(user.id)})
-    refresh_token = await create_refresh_token({"sub": str(user.id)})
+    # Создаем JWT токены с указанием типа пользователя "user"
+    access_token = await create_access_token({"sub": str(user.id)}, user_type="user")
+    refresh_token = await create_refresh_token({"sub": str(user.id)}, user_type="user")
 
     # Обновляем last_login
     from datetime import datetime

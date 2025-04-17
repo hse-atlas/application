@@ -39,9 +39,12 @@ async def get_async_session() -> AsyncSession:
 
 
 # Функция для создания access токена
-async def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+async def create_access_token(data: dict, user_type: str, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
-    logger.info(f"Creating access token for user ID: {to_encode.get('sub')}")
+    logger.info(f"Creating access token for user ID: {to_encode.get('sub')}, type: {user_type}")
+
+    # Добавляем тип пользователя в payload токена
+    to_encode.update({"user_type": user_type})
 
     # Добавляем jti (JWT ID) для возможности отзыва токена
     jti = str(uuid.uuid4())
@@ -67,9 +70,12 @@ async def create_access_token(data: dict, expires_delta: Optional[timedelta] = N
 
 
 # Функция для создания refresh токена
-async def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+async def create_refresh_token(data: dict, user_type: str, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
-    logger.info(f"Creating refresh token for user ID: {to_encode.get('sub')}")
+    logger.info(f"Creating refresh token for user ID: {to_encode.get('sub')}, type: {user_type}")
+
+    # Добавляем тип пользователя в payload токена
+    to_encode.update({"user_type": user_type})
 
     # Добавляем jti (JWT ID) для возможности отзыва токена
     jti = str(uuid.uuid4())
@@ -335,42 +341,60 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Получаем пользователя из БД
+        # Получаем ID и тип пользователя из токена
         user_id = payload.get("sub")
-        if not user_id:
-            logger.warning("Token payload missing 'sub' claim")
+        user_type = payload.get("user_type")
+
+        if not user_id or not user_type:
+            logger.warning(f"Token missing required claims: sub={user_id}, user_type={user_type}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        logger.info(f"User ID from token: {user_id}")
+        logger.info(f"User ID from token: {user_id}, Type: {user_type}")
 
-        # Сначала проверяем, существует ли пользователь как администратор
-        admin_result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
-        admin = admin_result.scalar_one_or_none()
+        # Проверяем существование пользователя на основе типа из токена
+        if user_type == "admin":
+            admin_result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
+            admin = admin_result.scalar_one_or_none()
 
-        # Проверяем, существует ли пользователь как обычный пользователь
-        user_result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
-        user = user_result.scalar_one_or_none()
+            if not admin:
+                logger.warning(f"Admin with ID {user_id} not found in database")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Admin not found",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
-        # Определяем фактический тип пользователя, приоритет - администратор
-        if admin:
             logger.info(f"Admin found: ID={admin.id}, login={admin.login}, email={admin.email}")
             request.state.user = admin
             request.state.user_type = "admin"
             actual_user = admin
-        elif user:
+
+        elif user_type == "user":
+            user_result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
+            user = user_result.scalar_one_or_none()
+
+            if not user:
+                logger.warning(f"User with ID {user_id} not found in database")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
             logger.info(f"User found: ID={user.id}, login={user.login}, email={user.email}")
             request.state.user = user
             request.state.user_type = "user"
             actual_user = user
+
         else:
-            logger.warning(f"No user or admin found with ID {user_id}")
+            logger.warning(f"Invalid user type in token: {user_type}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found",
+                detail="Invalid user type",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
@@ -437,9 +461,11 @@ async def refresh_tokens(refresh_token: str, db: AsyncSession = Depends(get_asyn
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Получаем user_id из токена
+        # Получаем user_id и user_type из токена
         user_id = payload.get("sub")
-        if not user_id:
+        user_type = payload.get("user_type")
+
+        if not user_id or not user_type:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload",
@@ -449,15 +475,16 @@ async def refresh_tokens(refresh_token: str, db: AsyncSession = Depends(get_asyn
         # Отзываем использованный refresh токен (one-time use)
         await revoke_token(refresh_token)
 
-        # Создаем новую пару токенов
-        access_token = await create_access_token({"sub": user_id})
-        new_refresh_token = await create_refresh_token({"sub": user_id})
+        # Создаем новую пару токенов с указанием типа пользователя
+        access_token = await create_access_token({"sub": user_id}, user_type=user_type)
+        new_refresh_token = await create_refresh_token({"sub": user_id}, user_type=user_type)
 
         return {
             "access_token": access_token,
             "refresh_token": new_refresh_token,
             "token_type": "bearer",
             "sub": user_id,
+            "user_type": user_type  # Возвращаем тип пользователя
         }
 
     except JWTError:
@@ -481,36 +508,56 @@ async def get_current_user(
         logger.info(f"[DEBUG] token payload: {payload}")
 
         user_id = payload.get("sub")
-        if user_id is None:
-            logger.error("[DEBUG] Token не содержит 'sub' поле")
+        user_type = payload.get("user_type")
+
+        if user_id is None or user_type is None:
+            logger.error("[DEBUG] Token не содержит необходимые поля 'sub' или 'user_type'")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        logger.info(f"[DEBUG] Ищем администратора с ID: {user_id}")
-        admin_result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
-        admin = admin_result.scalar_one_or_none()
+        logger.info(f"[DEBUG] ID пользователя: {user_id}, тип: {user_type}")
 
-        if admin:
+        # Проверяем пользователя в соответствующей таблице на основе user_type
+        if user_type == "admin":
+            admin_result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
+            admin = admin_result.scalar_one_or_none()
+
+            if not admin:
+                logger.error(f"[DEBUG] Администратор с ID {user_id} не найден")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Admin not found",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
             logger.info(f"[DEBUG] Найден администратор: id={admin.id}, email={admin.email}")
             return {"user": admin, "type": "admin"}
 
-        logger.info(f"[DEBUG] Администратор не найден, ищем обычного пользователя с ID: {user_id}")
-        user_result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
-        user = user_result.scalar_one_or_none()
+        elif user_type == "user":
+            user_result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
+            user = user_result.scalar_one_or_none()
 
-        if user:
+            if not user:
+                logger.error(f"[DEBUG] Пользователь с ID {user_id} не найден")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
             logger.info(f"[DEBUG] Найден пользователь: id={user.id}, email={user.email}")
             return {"user": user, "type": "user"}
 
-        logger.error(f"[DEBUG] Пользователь с ID {user_id} не найден ни среди админов, ни среди пользователей")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        else:
+            logger.error(f"[DEBUG] Недопустимый тип пользователя в токене: {user_type}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user type",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
     except JWTError as e:
         logger.error(f"[DEBUG] JWTError в get_current_user: {str(e)}")

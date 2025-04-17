@@ -7,8 +7,8 @@ from sqlalchemy import cast, String
 from sqlalchemy.future import select
 
 from app.database import async_session_maker
-from app.jwt_auth import create_access_token, create_refresh_token
-from app.schemas import RegisterData, LoginData, TokenResponse, ProjectsBase, UserStatus
+from app.jwt_auth import create_access_token, create_refresh_token, decode_token, revoke_token
+from app.schemas import RegisterData, LoginData, TokenResponse, ProjectsBase, UserStatus, UsersBase
 from app.security import verify_password, get_password_hash, password_meets_requirements
 
 import logging
@@ -97,8 +97,6 @@ async def user_login(
         db: AsyncSession = Depends(get_async_session)
 ):
     # Поиск пользователя по email и project_id
-    from app.schemas import UsersBase
-
     result = await db.execute(
         select(UsersBase).where(
             UsersBase.email == user_data.email,
@@ -127,9 +125,9 @@ async def user_login(
             detail="Invalid email or password"
         )
 
-    # Генерация токенов
-    access_token = await create_access_token({"sub": str(user.id)})
-    refresh_token = await create_refresh_token({"sub": str(user.id)})
+    # Генерация токенов с указанием типа пользователя "user"
+    access_token = await create_access_token({"sub": str(user.id)}, user_type="user")
+    refresh_token = await create_refresh_token({"sub": str(user.id)}, user_type="user")
 
     # Установка токенов в cookie
     response.set_cookie(
@@ -198,7 +196,7 @@ async def user_token_refresh(
         )
 
     try:
-        # Проверяем, что токен принадлежит пользователю
+        # Проверяем токен
         payload = await decode_token(refresh_token)
 
         if payload.get("type") != "refresh":
@@ -209,10 +207,21 @@ async def user_token_refresh(
             )
 
         user_id = payload.get("sub")
-        if not user_id:
+        user_type = payload.get("user_type")
+
+        if not user_id or not user_type:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Проверяем, что тип пользователя - user
+        if user_type != "user":
+            logger.warning(f"Failed refresh attempt: Token user type {user_type} is not 'user'")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid user token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
@@ -239,9 +248,9 @@ async def user_token_refresh(
         # Отзываем использованный refresh токен
         await revoke_token(refresh_token, delay_seconds=0)  # Сразу отзываем без задержки
 
-        # Создаем новые токены только если user_id валидный
-        access_token = await create_access_token({"sub": user_id})
-        new_refresh_token = await create_refresh_token({"sub": user_id})
+        # Создаем новые токены с указанием типа пользователя "user"
+        access_token = await create_access_token({"sub": user_id}, user_type="user")
+        new_refresh_token = await create_refresh_token({"sub": user_id}, user_type="user")
 
         tokens = {
             "access_token": access_token,

@@ -2,10 +2,11 @@ from fastapi import APIRouter, HTTPException, status, Response, Depends, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.database import async_session_maker
-from app.schemas import TokenResponse
-from app.jwt_auth import refresh_tokens
+from app.schemas import TokenResponse, AdminsBase, UsersBase
+from app.jwt_auth import refresh_tokens, decode_token
 
 # Добавляем логирование для common_auth.py
 import logging
@@ -67,24 +68,23 @@ async def token_refresh_redirect(
         # Декодируем токен, чтобы определить тип пользователя
         payload = await decode_token(refresh_token)
         user_id = payload.get("sub")
+        user_type = payload.get("user_type")  # Получаем тип пользователя из токена
 
-        if not user_id:
+        if not user_id or not user_type:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Проверяем тип пользователя
-        admin_result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
-        admin = admin_result.scalar_one_or_none()
-
-        if admin:
+        # Проверяем тип пользователя из токена
+        if user_type == "admin":
             # Перенаправляем на эндпоинт для администраторов
             from app.admin_auth import admin_token_refresh
             return await admin_token_refresh(request, response, refresh_data, db)
-        else:
-            # Пытаемся найти пользователя
+        elif user_type == "user":
+            # Для пользователей нам понадобится project_id
+            # Пробуем найти пользователя
             user_result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
             user = user_result.scalar_one_or_none()
 
@@ -99,6 +99,13 @@ async def token_refresh_redirect(
                     detail="User not found",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
+        else:
+            logger.warning(f"Invalid user type in token: {user_type}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user type",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
     except HTTPException as e:
         # Перебрасываем ошибку дальше

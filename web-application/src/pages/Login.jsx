@@ -24,8 +24,9 @@ const Login = () => {
 
       const { access_token, refresh_token } = response.data;
 
-      // Сохраняем токены и явно указываем, что мы авторизуемся как админ
-      tokenService.saveTokens({ access_token, refresh_token }, "admin");
+      // Сохраняем токены - теперь без явного указания типа пользователя
+      // Тип пользователя определится из самого токена
+      tokenService.saveTokens({ access_token, refresh_token });
 
       tokenRefreshService.start();
 

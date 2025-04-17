@@ -120,8 +120,9 @@ async def admin_auth(
     logger.debug(f"Generating tokens for admin id={admin.id}")
 
     try:
-        access_token = await create_access_token({"sub": str(admin.id)})
-        refresh_token = await create_refresh_token({"sub": str(admin.id)})
+        # Обновлено: передаем user_type="admin" в функции создания токенов
+        access_token = await create_access_token({"sub": str(admin.id)}, user_type="admin")
+        refresh_token = await create_refresh_token({"sub": str(admin.id)}, user_type="admin")
 
         logger.debug(f"Tokens generated successfully for admin id={admin.id}")
         logger.debug(f"Access token starts with: {access_token[:10]}...")
@@ -239,10 +240,21 @@ async def admin_token_refresh(
             )
 
         user_id = payload.get("sub")
+        user_type = payload.get("user_type")
+
         if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Проверяем, что тип пользователя - админ
+        if user_type != "admin":
+            logger.warning(f"Failed refresh attempt: Token user type {user_type} is not 'admin'")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid admin token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
@@ -265,8 +277,8 @@ async def admin_token_refresh(
         await revoke_token(refresh_token, delay_seconds=0)  # Сразу отзываем без задержки
 
         # Создаем новые токены только если user_id валидный
-        access_token = await create_access_token({"sub": user_id})
-        new_refresh_token = await create_refresh_token({"sub": user_id})
+        access_token = await create_access_token({"sub": user_id}, user_type="admin")
+        new_refresh_token = await create_refresh_token({"sub": user_id}, user_type="admin")
 
         tokens = {
             "access_token": access_token,

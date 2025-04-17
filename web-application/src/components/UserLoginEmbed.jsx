@@ -22,11 +22,12 @@ const UserLoginEmbed = () => {
                 password: values.password,
             });
 
-            // Сохраняем токены и явно указываем, что мы авторизуемся как user
+            // Сохраняем токены без явного указания типа пользователя
+            // Тип пользователя будет определён из самого токена
             tokenService.saveTokens({
                 access_token: response.access_token,
                 refresh_token: response.refresh_token
-            }, "user");
+            });
 
             window.parent.postMessage({
                 type: "ATLAS_AUTH_SUCCESS",

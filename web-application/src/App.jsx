@@ -22,7 +22,8 @@ function AppContent() {
     const refreshToken = params.get('refresh_token');
 
     if (accessToken && refreshToken) {
-      // Сохранение токенов через сервис
+      // Сохранение токенов через сервис без указания типа пользователя
+      // Тип будет определен автоматически из токена
       tokenService.saveTokens({
         access_token: accessToken,
         refresh_token: refreshToken

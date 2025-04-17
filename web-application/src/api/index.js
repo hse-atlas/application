@@ -36,11 +36,30 @@ const refreshTokens = async () => {
       throw new Error('No refresh token available');
     }
 
-    // Определяем эндпоинт обновления токенов на основе типа пользователя
-    const projectId = tokenService.getProjectIdFromUrl();
-    const refreshEndpoint = tokenService.getRefreshEndpoint(projectId);
+    // Получаем тип пользователя из refresh токена
+    const refreshTokenDecoded = tokenService.decodeToken(refreshToken);
+    const userType = refreshTokenDecoded?.user_type;
 
-    console.log(`Using refresh endpoint: ${refreshEndpoint}`);
+    if (!userType) {
+      throw new Error('Invalid refresh token: missing user_type');
+    }
+
+    // Определяем эндпоинт обновления токенов на основе типа пользователя из токена
+    let refreshEndpoint;
+    if (userType === 'admin') {
+      refreshEndpoint = "/api/auth/admin/refresh/";
+    } else if (userType === 'user') {
+      const projectId = tokenService.getProjectIdFromUrl();
+      if (!projectId) {
+        refreshEndpoint = "/api/auth/refresh/"; // Общий эндпоинт как запасной вариант
+      } else {
+        refreshEndpoint = `/api/auth/user/${projectId}/refresh/`;
+      }
+    } else {
+      refreshEndpoint = "/api/auth/refresh/"; // Общий эндпоинт для неизвестных типов
+    }
+
+    console.log(`Using refresh endpoint: ${refreshEndpoint} for user_type: ${userType}`);
 
     // Создаем новый экземпляр axios без интерсепторов, чтобы избежать рекурсии
     const refreshApi = axios.create({
@@ -53,10 +72,9 @@ const refreshTokens = async () => {
       refresh_token: refreshToken
     });
 
-    // Сохраняем новые токены через сервис (сохраняя тип пользователя)
+    // Сохраняем новые токены через сервис
     const { access_token, refresh_token } = response.data;
-    const userType = tokenService.getUserType() || 'admin'; // Запасной вариант
-    tokenService.saveTokens({ access_token, refresh_token }, userType);
+    tokenService.saveTokens({ access_token, refresh_token });
 
     console.log('%c[Token] ✅ Tokens refreshed successfully!', 'background: #f6ffed; color: #52c41a; padding: 2px 4px; border-radius: 2px;', {
       access_token_starts_with: access_token.substring(0, 15) + '...',
