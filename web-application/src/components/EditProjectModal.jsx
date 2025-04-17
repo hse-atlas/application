@@ -116,6 +116,20 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
           <Input.TextArea placeholder="Enter project description" />
         </Form.Item>
 
+        <Form.Item
+          name="url"
+          label="Project URL"
+          rules={[
+            {
+              required: true,
+              type: "url",
+              message: "Please enter a valid URL!",
+            },
+          ]}
+        >
+          <Input placeholder="Enter project URL" />
+        </Form.Item>
+
         <Form.Item label="OAuth Status">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Switch
