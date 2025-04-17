@@ -315,7 +315,7 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
                 logger.info(f"Found existing admin by email {email}, linking OAuth provider {provider} (ID: {provider_user_id})")
                 admin.oauth_provider = provider
                 admin.oauth_user_id = provider_user_id
-                admin.last_login = datetime.now(timezone.utc)
+                admin.last_login = datetime.utcnow()
                 await session.commit()
                 await session.refresh(admin)
             else:
@@ -334,13 +334,13 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
             admin_data = {
                 "email": email, "login": login, "password": None,
                 "oauth_provider": provider, "oauth_user_id": provider_user_id,
-                "last_login": datetime.now(timezone.utc)
+                "last_login": datetime.utcnow()
             }
             admin = await add_admin(**admin_data)
             logger.info(f"New admin created via OAuth: ID={admin.id}, login={admin.login}")
     else:
         logger.info(f"Found existing admin by OAuth {provider} ID {provider_user_id}. Updating last login.")
-        admin.last_login = datetime.now(timezone.utc)
+        admin.last_login = datetime.utcnow()
         await session.commit()
         await session.refresh(admin)
 
@@ -383,7 +383,7 @@ async def process_user_oauth(email: str, name: str, provider: str, provider_user
                 logger.info(f"Found existing user by email {email} in project {project_id}, linking OAuth provider {provider} (ID: {provider_user_id})")
                 user.oauth_provider = provider
                 user.oauth_user_id = provider_user_id
-                user.last_login = datetime.now(timezone.utc)
+                user.last_login = datetime.utcnow()
                 await session.commit()
                 await session.refresh(user)
             else:
@@ -403,7 +403,7 @@ async def process_user_oauth(email: str, name: str, provider: str, provider_user
                 "email": email, "login": login, "password": None,
                 "project_id": str(project_id), "role": "user", "status": UserStatus.ACTIVE, # Используем Enum
                 "oauth_provider": provider, "oauth_user_id": provider_user_id,
-                "last_login": datetime.now(timezone.utc)
+                "last_login": datetime.utcnow()
             }
             user = await add_user(**user_data)
             logger.info(f"New user created via OAuth: ID={user.id}, login={user.login}, project={project_id}")
@@ -413,7 +413,7 @@ async def process_user_oauth(email: str, name: str, provider: str, provider_user
          if user.status == UserStatus.BLOCKED:
               logger.warning(f"OAuth login failed for user {user.id} ({email}): account is blocked.")
               raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is blocked")
-         user.last_login = datetime.now(timezone.utc)
+         user.last_login = datetime.utcnow()
          await session.commit()
          await session.refresh(user)
 

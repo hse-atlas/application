@@ -737,29 +737,27 @@ async def get_current_user(
         )
 
 
-# Получение только администратора (без изменений, т.к. работает поверх get_current_user)
+# Получение только администратора
 async def get_current_admin(current_user: Dict[str, Any] = Depends(get_current_user)):
-    logger.debug(f"[DEBUG] get_current_admin started") # Debug level
-    # logger.info(f"[DEBUG] current_user: {current_user}") # Слишком многословно для логов
+    logger.debug(f"[DEBUG] get_current_admin started")
 
     if not current_user:
-        # Эта ветка маловероятна, т.к. get_current_user выбросит исключение раньше
         logger.error("[DEBUG] current_user is empty (None) in get_current_admin")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required",
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
     if current_user.get("type") != "admin":
-        user_id = current_user.get("user", {}).get("id", "unknown")
-        logger.warning(f"[DEBUG] User {user_id} is not an admin (type: {current_user.get('type')})")
+        # Изменено: Корректное получение user_id для логирования
+        user_object = current_user.get("user")
+        user_id = getattr(user_object, 'id', 'unknown') if user_object else 'unknown' # Безопасное получение ID
+        user_type = current_user.get('type', 'unknown')
+        logger.warning(f"[DEBUG] User {user_id} is not an admin (type: {user_type})")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions (admin required)",
         )
 
     admin_user = current_user.get("user")
-    if not isinstance(admin_user, AdminsBase): # Проверка типа объекта
+    if not isinstance(admin_user, AdminsBase):
          logger.error(f"[DEBUG] Malformed user data in get_current_admin: 'user' field is not AdminsBase")
          raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Malformed user data")
 
@@ -767,25 +765,27 @@ async def get_current_admin(current_user: Dict[str, Any] = Depends(get_current_u
     return admin_user
 
 
-# Получение только пользователя проекта (без изменений, т.к. работает поверх get_current_user)
+# Получение только пользователя проекта
 async def get_current_project_user(current_user: Dict[str, Any] = Depends(get_current_user)):
-    logger.debug(f"[DEBUG] get_current_project_user started") # Debug level
+    logger.debug(f"[DEBUG] get_current_project_user started")
 
     if not current_user:
-        # Маловероятно
         logger.error("[DEBUG] current_user is empty (None) in get_current_project_user")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
     if current_user.get("type") != "user":
-        user_id = current_user.get("user", {}).get("id", "unknown")
-        logger.warning(f"[DEBUG] User {user_id} is not a project user (type: {current_user.get('type')})")
+        # Изменено: Корректное получение user_id для логирования
+        user_object = current_user.get("user")
+        user_id = getattr(user_object, 'id', 'unknown') if user_object else 'unknown' # Безопасное получение ID
+        user_type = current_user.get('type', 'unknown')
+        logger.warning(f"[DEBUG] User {user_id} is not a project user (type: {user_type})")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions (project user required)",
         )
 
     project_user = current_user.get("user")
-    if not isinstance(project_user, UsersBase): # Проверка типа объекта
+    if not isinstance(project_user, UsersBase):
          logger.error(f"[DEBUG] Malformed user data in get_current_project_user: 'user' field is not UsersBase")
          raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Malformed user data")
 
