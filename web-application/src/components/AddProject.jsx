@@ -107,8 +107,6 @@ const AddProject = ({ visible, onCancel, onAdd }) => {
           <Input placeholder="Enter project URL" />
         </Form.Item>
 
-        <Form.Item label="Enable OAuth"></Form.Item>
-
         <Form.Item label="OAuth Status">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Switch
