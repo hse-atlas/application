@@ -39,11 +39,13 @@ const handleOAuthLogin = (provider, projectId) => {
         message.error("Cannot initiate OAuth login: project ID missing.");
         return;
     }
-    // Формируем URL для пользовательского OAuth
-    window.parent.location.href = `/api/auth/oauth/user/${provider}/${projectId}`;
-    // Используем window.parent.location.href, чтобы редирект произошел в родительском окне,
-    // а не внутри iframe (если форма встроена через iframe)
-    // Если форма не в iframe, можно использовать window.location.href
+    // Формируем ПОЛНЫЙ URL для инициации OAuth на сервере Atlas
+    // Убедитесь, что `/api/auth/...` - правильный путь на домене Atlas
+    const oauthUrl = `https://atlas.appweb.space/api/auth/oauth/user/${provider}/${projectId}`;
+
+    // --- ИЗМЕНЕНИЕ ---
+    // Навигация происходит ВНУТРИ iframe
+    window.location.href = oauthUrl;
 };
 
 
