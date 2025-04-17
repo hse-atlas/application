@@ -1,6 +1,7 @@
-import { checkAndRefreshTokenIfNeeded } from '../api';
+// tokenRefreshService.js
+import { checkAndRefreshTokenIfNeeded } from '../api'; // Импортируем функцию проверки/обновления
 import { message } from 'antd';
-import tokenService from './tokenService';
+import tokenService from './tokenService'; // Импортируем для проверки токена
 
 // Интервал проверки токена (в миллисекундах)
 const TOKEN_CHECK_INTERVAL = 60000; // Проверять каждую минуту
@@ -9,105 +10,125 @@ class TokenRefreshService {
   constructor() {
     this.intervalId = null;
     this.isActive = false;
-    this.showNotifications = false; // Флаг для управления уведомлениями
+    this.showNotifications = false;
+    this.isChecking = false; // Флаг для предотвращения параллельных проверок
   }
 
-  // Включение/выключение уведомлений
   toggleNotifications(show) {
     this.showNotifications = show;
   }
 
-  // Запуск сервиса автоматического обновления токенов
   start() {
-    if (this.isActive) return;
+    // Запускаем только если есть токен и сервис не активен
+    if (this.isActive || !tokenService.isAuthenticated()) {
+      console.log('[RefreshService] Not starting: Service active or user not authenticated.');
+      return;
+    }
 
-    // Выполняем синхронизацию токенов перед запуском
-    tokenService.synchronizeTokens();
+    console.log('[RefreshService] Starting...');
+    this.isActive = true;
 
-    // Проверяем токен при старте
-    this._checkTokenWithNotification();
+    // Запускаем первую проверку немедленно, но асинхронно
+    this._checkToken();
 
-    // Устанавливаем интервал для регулярной проверки
+    // Устанавливаем интервал
     this.intervalId = setInterval(() => {
-      this._checkTokenWithNotification();
+      this._checkToken();
     }, TOKEN_CHECK_INTERVAL);
 
-    this.isActive = true;
-    console.log('Token refresh service started');
+    console.log(`[RefreshService] Started with interval ${TOKEN_CHECK_INTERVAL / 1000}s.`);
   }
 
-  // Приватный метод для проверки токена с возможными уведомлениями
-  async _checkTokenWithNotification() {
+  async _checkToken() {
+    // Предотвращаем запуск новой проверки, если предыдущая еще идет
+    if (this.isChecking) {
+      console.debug('[RefreshService] Check already in progress, skipping interval.');
+      return;
+    }
+
+    // Проверяем, есть ли вообще токен, чтобы не гонять проверку зря
+    if (!tokenService.isAuthenticated()) {
+      console.debug('[RefreshService] No token found, stopping service.');
+      this.stop();
+      return;
+    }
+
+    this.isChecking = true;
+    console.debug('[RefreshService] Performing token check...');
+
     try {
-      // Получаем актуальную информацию о токене через сервис
-      const tokenInfo = tokenService.checkTokenExpiration();
+      const oldToken = tokenService.getAccessToken(); // Запоминаем старый токен до проверки/обновления
+      await checkAndRefreshTokenIfNeeded(); // Вызываем функцию проверки и возможного обновления
+      const newToken = tokenService.getAccessToken(); // Получаем токен после проверки/обновления
 
-      if (!tokenInfo.isValid) {
-        console.log('Token is not valid, stopping refresh service');
-        this.stop();
-        return;
-      }
-
-      // Если токен скоро истечет, обновляем его
-      if (tokenInfo.expiresIn < 300) { // менее 5 минут
-        const oldToken = tokenService.getAccessToken();
-        await checkAndRefreshTokenIfNeeded();
-        const newToken = tokenService.getAccessToken();
-
-        // Проверяем, действительно ли токен изменился
-        if (this.showNotifications && oldToken !== newToken) {
-          message.info({
-            content: 'Your session was automatically extended to keep you logged in.',
-            duration: 3,
-            style: { marginTop: '20px' },
-          });
-        }
+      // Показываем уведомление, если токен реально обновился и уведомления включены
+      // Проверяем и старый, и новый, т.к. токен мог быть удален при ошибке
+      if (this.showNotifications && oldToken && newToken && oldToken !== newToken) {
+        message.info({
+          content: 'Your session was automatically extended.',
+          duration: 3,
+          style: { marginTop: '20px' },
+        });
+        console.log('[RefreshService] Session extended notification shown.');
       }
     } catch (error) {
-      console.error('Error in token check with notification:', error);
+      // Ошибки логируются внутри checkAndRefreshTokenIfNeeded или refreshAuthToken
+      console.error('[RefreshService] Error during scheduled check:', error.message);
+      // Не останавливаем сервис при ошибке, он попробует снова
+    } finally {
+      this.isChecking = false; // Сбрасываем флаг
+      console.debug('[RefreshService] Token check finished.');
     }
   }
 
-  // Остановка сервиса
   stop() {
     if (!this.isActive) return;
 
     clearInterval(this.intervalId);
     this.intervalId = null;
     this.isActive = false;
-    console.log('Token refresh service stopped');
+    this.isChecking = false; // Сбрасываем флаг при остановке
+    console.log('[RefreshService] Stopped.');
   }
 
-  // Регистрация обработчиков событий для приостановки/возобновления проверки
   registerEventListeners() {
-    // Приостанавливаем проверку, когда вкладка неактивна
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
+        console.debug('[RefreshService] Tab hidden, stopping service.');
         this.stop();
       } else {
-        // Синхронизируем токены перед возобновлением
-        tokenService.synchronizeTokens();
-        this.start(); // Возобновляем и сразу проверяем токен
+        // При возвращении фокуса - запускаем сервис (он сам проверит токен)
+        console.debug('[RefreshService] Tab focused, starting service.');
+        this.start();
       }
     });
 
-    // Проверяем токен при возвращении онлайн
     window.addEventListener('online', () => {
-      tokenService.synchronizeTokens();
-      checkAndRefreshTokenIfNeeded();
+      // При восстановлении сети - запускаем сервис
+      console.debug('[RefreshService] Network online, ensuring service is running.');
+      this.start();
+    });
+
+    // Слушаем событие logout, чтобы остановить сервис
+    window.addEventListener('logout', () => {
+      console.debug('[RefreshService] Logout event detected, stopping service.');
+      this.stop();
+    });
+    // Слушаем событие login, чтобы запустить сервис
+    window.addEventListener('login', () => {
+      console.debug('[RefreshService] Login event detected, starting service.');
+      this.start();
     });
   }
 }
 
-// Создаем единственный экземпляр сервиса
+// --- Экспорт и дебаг ---
 const tokenRefreshService = new TokenRefreshService();
 tokenRefreshService.registerEventListeners();
 
-// Публичный метод для включения уведомлений в консоли разработчика
 tokenRefreshService.debug = function () {
   this.toggleNotifications(true);
-  console.log('%c[Token Service] 🔍 Debug mode enabled. You will see notifications when tokens are refreshed.',
-    'background: #e6f7ff; color: #1890ff; padding: 4px; border-radius: 2px; font-weight: bold;');
+  console.log('%c[RefreshService] 🔍 Debug mode enabled.', 'background: #e6f7ff; color: #1890ff; padding: 4px; border-radius: 2px; font-weight: bold;');
 };
 
 export default tokenRefreshService;
