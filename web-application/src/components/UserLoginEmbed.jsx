@@ -45,7 +45,7 @@ const handleOAuthLogin = (provider, projectId) => {
 
     // --- ИЗМЕНЕНИЕ ---
     // Навигация происходит ВНУТРИ iframe
-    window.location.href = oauthUrl;
+    window.parent.location.href = oauthUrl;
 };
 
 
