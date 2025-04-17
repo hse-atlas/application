@@ -277,7 +277,7 @@ async def get_project_details(
 
 @router.get("/{project_id}/url", response_model=str)
 async def get_project_url(
-        project_id: int,
+        project_id: UUID,
         session: AsyncSession = Depends(get_async_session),
         current_admin=Depends(get_current_admin)
 ):
@@ -303,7 +303,7 @@ async def get_project_url(
 
 @router.put("/{project_id}/oauth", response_model=ProjectOut)
 async def update_project_oauth(
-        project_id: int,
+        project_id: UUID,
         oauth_settings: ProjectOAuthSettings,
         session: AsyncSession = Depends(get_async_session),
         current_admin=Depends(get_current_admin),
