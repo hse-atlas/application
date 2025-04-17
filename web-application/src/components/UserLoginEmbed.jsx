@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { Form, Input, Button, message, Divider, Space, Spin } from "antd"; // Добавили Divider, Space, Spin
 import { useParams, useNavigate } from "react-router-dom"; // Добавили useNavigate (если нужно перенаправление)
-import { loginUser, isValidUUID, getProjectOAuthConfig } from "../api"; // Добавили getProjectOAuthConfig
+import { loginUser, isValidUUID, getProjectOAuthConfig, getProjectRedirectUrl } from "../api"; // Добавили getProjectOAuthConfig
 import tokenService from "../services/tokenService";
 // Импортируем иконки
 import { GoogleOutlined, WeiboOutlined /* добавьте другие иконки по мере необходимости */ } from '@ant-design/icons';
