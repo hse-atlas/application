@@ -349,7 +349,7 @@ async def update_project_oauth(
             response_model=ProjectPublicOAuthConfig,
             tags=['Public Project Info']) # Добавляем тег для Swagger
 async def get_project_public_oauth_config(
-    project_id: UUID = Path(..., title="The ID of the project to get OAuth config for"), # Используем Path для валидации UUID в пути
+    project_id: UUID, # Используем Path для валидации UUID в пути
     session: AsyncSession = Depends(get_async_session),
 ):
     """
