@@ -186,7 +186,12 @@ async def token_middleware(request: Request, call_next):
 
 # Подключаем роутеры (без изменений)
 application.include_router(admin_auth_router)
-# ... остальные роутеры ...
+application.include_router(user_auth_router)
+application.include_router(common_auth_router)
+application.include_router(oauth_router)
+application.include_router(project_crud_router)
+application.include_router(user_crud_router)
+application.include_router(user_roles_router)
 application.include_router(debug_router)
 
 
