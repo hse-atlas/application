@@ -295,7 +295,7 @@ async def get_public_project_url( # Переименуем функцию для
     """
 
     # Запрос к БД: ищем проект только по ID
-    stmt = select(ProjectsBase).where(ProjectsBase.id == project_id)
+    stmt = select(ProjectsBase).where(ProjectsBase.id == str(project_id))
     result = await session.execute(stmt)
     project = result.scalar_one_or_none()
 
