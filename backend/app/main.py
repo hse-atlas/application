@@ -1,6 +1,5 @@
 import logging
 import re # <-- Добавлен импорт re
-from asyncio import anext # <-- Убедитесь, что это не вызовет ImportError на Python < 3.10
 
 from fastapi import FastAPI, Depends, Request, Response, HTTPException, status # Добавлен status
 from fastapi.middleware.cors import CORSMiddleware
