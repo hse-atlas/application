@@ -91,23 +91,6 @@ async def token_refresh(
         token_prefix = "admins_" if tokens_data['user_type'] == "admin" else "users_"
         logger.info(f"Setting cookies with token prefix: {token_prefix}")
 
-        # Устанавливаем новые токены в cookie
-        response.set_cookie(
-            key=f"{token_prefix}access_token",
-            value=tokens_data["access_token"],
-            httponly=True,
-            secure=True, # Включать в production
-            samesite="strict"
-        )
-        response.set_cookie(
-            key=f"{token_prefix}refresh_token",
-            value=tokens_data["refresh_token"],
-            httponly=True,
-            secure=True, # Включать в production
-            samesite="strict"
-        )
-        logger.info("Cookies set with new tokens")
-
         # Возвращаем новые токены в теле ответа (без user_type)
         return TokenResponse(
             access_token=tokens_data["access_token"],

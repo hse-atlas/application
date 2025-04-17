@@ -163,22 +163,6 @@ async def user_login(
 
         logger.debug(f"Tokens generated successfully for user id={user.id}")
 
-        # Установка токенов в cookie
-        response.set_cookie(
-            key="users_access_token",
-            value=access_token,
-            httponly=True,
-            secure=True, # Включать в production
-            samesite="strict"
-        )
-        response.set_cookie(
-            key="users_refresh_token",
-            value=refresh_token,
-            httponly=True,
-            secure=True, # Включать в production
-            samesite="strict"
-        )
-        logger.info(f"Cookies set for user id={user.id}")
 
         return TokenResponse(
             access_token=access_token,

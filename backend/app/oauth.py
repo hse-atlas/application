@@ -351,9 +351,6 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
     redirect_url = f"/?type=admin&access_token={access_token}&refresh_token={refresh_token}"
     response = RedirectResponse(url=redirect_url)
     logger.info(f"Redirecting admin to: {redirect_url}")
-    response.set_cookie(key="admins_access_token", value=access_token, httponly=True, secure=True, samesite="strict")
-    response.set_cookie(key="admins_refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict")
-    logger.info("Admin auth cookies set.")
     return response
 
 
@@ -425,9 +422,6 @@ async def process_user_oauth(email: str, name: str, provider: str, provider_user
         redirect_url = f"/?type=user&project_id={project_id}&access_token={access_token}&refresh_token={refresh_token}"
         response = RedirectResponse(url=redirect_url)
         logger.info(f"Redirecting user to: {redirect_url}")
-        response.set_cookie(key="users_access_token", value=access_token, httponly=True, secure=True, samesite="strict")
-        response.set_cookie(key="users_refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict")
-        logger.info("User auth cookies set.")
         return response
     
     except Exception as e:

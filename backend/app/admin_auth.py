@@ -136,23 +136,6 @@ async def admin_auth(
         logger.debug(f"Access token starts with: {access_token[:10]}...")
         logger.debug(f"Refresh token starts with: {refresh_token[:10]}...")
 
-        # Установка токенов в cookie (httponly для безопасности)
-        response.set_cookie(
-            key="admins_access_token",
-            value=access_token,
-            httponly=True,
-            secure=True,  # Только через HTTPS в production
-            samesite="strict"  # Защита от CSRF
-        )
-        response.set_cookie(
-            key="admins_refresh_token",
-            value=refresh_token,
-            httponly=True,
-            secure=True,
-            samesite="strict"
-        )
-        logger.info(f"Cookies set for admin id={admin.id}")
-
         # Возвращаем токены также в теле ответа (для использования в мобильных приложениях)
         return TokenResponse(
             access_token=access_token,

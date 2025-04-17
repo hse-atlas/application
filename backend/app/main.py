@@ -163,27 +163,6 @@ async def auth_middleware_wrapper(request: Request, call_next):
     return response
 
 
-# Middleware для установки токенов в ответы (без изменений)
-@application.middleware("http")
-async def token_middleware(request: Request, call_next):
-    response = await call_next(request)
-    new_access_token = getattr(request.state, "new_access_token", None)
-    new_refresh_token = getattr(request.state, "new_refresh_token", None)
-    user_type = getattr(request.state, "user_type", None)
-
-    if new_access_token and user_type in ["admin", "user"]:
-        cookie_key = "admins_access_token" if user_type == "admin" else "users_access_token"
-        logger.debug(f"Setting new access token cookie '{cookie_key}'", extra={"path": request.url.path, "user_type": user_type})
-        response.set_cookie(key=cookie_key, value=new_access_token, httponly=True, secure=True, samesite="strict")
-
-    if new_refresh_token and user_type in ["admin", "user"]:
-        cookie_key = "admins_refresh_token" if user_type == "admin" else "users_refresh_token"
-        logger.debug(f"Setting new refresh token cookie '{cookie_key}'", extra={"path": request.url.path, "user_type": user_type})
-        response.set_cookie(key=cookie_key, value=new_refresh_token, httponly=True, secure=True, samesite="strict")
-
-    return response
-
-
 # Подключаем роутеры (без изменений)
 application.include_router(admin_auth_router)
 application.include_router(user_auth_router)
