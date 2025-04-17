@@ -6,13 +6,14 @@ from slowapi.util import get_remote_address
 from app.database import async_session_maker
 from app.schemas import RegisterData, LoginData, TokenResponse, AdminsBase, AdminProfileResponse
 from app.security import verify_password, get_password_hash, password_meets_requirements
-from app.jwt_auth import create_access_token, create_refresh_token, get_current_admin, refresh_tokens
+# Изменено: импортируем get_current_admin отдельно, refresh_tokens больше не нужен здесь
+from app.jwt_auth import create_access_token, create_refresh_token, get_current_admin
 
 # Добавим логирование в авторизацию админов
 import logging
 
 # Получаем логгер для аутентификации
-logger = logging.getLogger('auth')
+logger = logging.getLogger('auth') # Используем существующий логгер 'auth'
 
 # Создаем лимитер для защиты от брутфорс-атак
 limiter = Limiter(key_func=get_remote_address)
@@ -25,9 +26,9 @@ async def get_async_session() -> AsyncSession:
         yield session
 
 
-# Регистрация администратора
+# Регистрация администратора (без изменений)
 @router.post("/register/", status_code=status.HTTP_201_CREATED)
-@limiter.limit("5/minute")  # Ограничение на 5 запросов в минуту с одного IP
+@limiter.limit("5/minute")
 async def admin_registration(
         request: Request,
         admin_data: RegisterData,
@@ -76,7 +77,7 @@ async def admin_registration(
 
         return {'message': 'Registration completed successfully!', 'admin_id': new_admin.id}
     except Exception as e:
-        logger.error(f"Error during admin registration for email={admin_data.email}: {str(e)}")
+        logger.error(f"Error during admin registration for email={admin_data.email}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail='Registration failed due to server error'
@@ -85,9 +86,9 @@ async def admin_registration(
 
 # Авторизация администратора
 @router.post("/login/", response_model=TokenResponse)
-@limiter.limit("10/minute")  # Ограничение на 10 запросов в минуту с одного IP
+@limiter.limit("10/minute")
 async def admin_auth(
-        request: Request,  # Добавляем обязательный аргумент request
+        request: Request,
         response: Response,
         admin_data: LoginData,
         db: AsyncSession = Depends(get_async_session)
@@ -106,6 +107,14 @@ async def admin_auth(
         )
 
     # Проверка пароля
+    # Добавлено: Убедимся, что у админа есть пароль (не только OAuth)
+    if not admin.password:
+        logger.warning(f"Admin login failed: account {admin_data.email} uses OAuth, password login disabled.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail='Password login not available for this account'
+        )
+
     password_valid = verify_password(admin_data.password, admin.password)
     if not password_valid:
         logger.warning(f"Admin login failed: incorrect password for email {admin_data.email}")
@@ -119,8 +128,9 @@ async def admin_auth(
     logger.debug(f"Generating tokens for admin id={admin.id}")
 
     try:
-        access_token = await create_access_token({"sub": str(admin.id)})
-        refresh_token = await create_refresh_token({"sub": str(admin.id)})
+        # Изменено: Передаем user_type="admin"
+        access_token = await create_access_token({"sub": str(admin.id)}, user_type="admin")
+        refresh_token = await create_refresh_token({"sub": str(admin.id)}, user_type="admin")
 
         logger.debug(f"Tokens generated successfully for admin id={admin.id}")
         logger.debug(f"Access token starts with: {access_token[:10]}...")
@@ -131,10 +141,9 @@ async def admin_auth(
             key="admins_access_token",
             value=access_token,
             httponly=True,
-            secure=True,  # Только через HTTPS
+            secure=True,  # Только через HTTPS в production
             samesite="strict"  # Защита от CSRF
         )
-
         response.set_cookie(
             key="admins_refresh_token",
             value=refresh_token,
@@ -142,7 +151,6 @@ async def admin_auth(
             secure=True,
             samesite="strict"
         )
-
         logger.info(f"Cookies set for admin id={admin.id}")
 
         # Возвращаем токены также в теле ответа (для использования в мобильных приложениях)
@@ -152,20 +160,21 @@ async def admin_auth(
             token_type="bearer"
         )
     except Exception as e:
-        logger.error(f"Error during token generation for admin id={admin.id}: {str(e)}")
+        logger.error(f"Error during token generation for admin id={admin.id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail='Failed to generate authentication tokens'
         )
 
 
+# Получение профиля администратора (без изменений)
 @router.get("/me", response_model=AdminProfileResponse)
 async def get_admin_profile(
         admin: AdminsBase = Depends(get_current_admin)
 ):
     """
-    Получение данных администратора
-    Требует валидного JWT токена администратора
+    Получение данных текущего аутентифицированного администратора.
+    Требует валидного JWT токена администратора.
     """
     logger.info(f"Admin profile request processing: id={admin.id}, email={admin.email}")
 
@@ -173,12 +182,12 @@ async def get_admin_profile(
         response_data = {
             "login": admin.login,
             "email": admin.email,
-            "user_role": "admin"
+            "user_role": "admin" # Роль захардкожена как 'admin'
         }
         logger.info(f"Admin profile response prepared: {response_data}")
-        return response_data
+        return AdminProfileResponse(**response_data) # Используем модель для валидации ответа
     except Exception as e:
-        logger.error(f"Error in get_admin_profile: {str(e)}")
+        logger.error(f"Error in get_admin_profile for admin id={admin.id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving admin profile"

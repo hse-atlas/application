@@ -20,15 +20,22 @@ class Config(BaseSettings):
     PASS_DB_USER: str
     PASS_DB_PASSWORD: str
 
-    # Настройки безопасности
+    # --- Общие настройки JWT ---
+    # Изменено: Разделили настройки токенов, оставили общие ключи/алгоритмы
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-
-    # Новые настройки безопасности
     PASSWORD_PEPPER: str = os.getenv("PASSWORD_PEPPER", secrets.token_hex(16))
     SESSION_SECRET_KEY: str = os.getenv("SESSION_SECRET_KEY", secrets.token_hex(32))
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
-    REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+
+    # --- Настройки токенов АДМИНИСТРАТОРОВ ---
+    # Добавлено: Отдельные настройки времени жизни для админов
+    ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES", "60")) # Например, 1 час
+    ADMIN_REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("ADMIN_REFRESH_TOKEN_EXPIRE_DAYS", "90")) # Например, 90 дней
+
+    # --- Настройки токенов ПОЛЬЗОВАТЕЛЕЙ ---
+    # Добавлено: Отдельные настройки времени жизни для пользователей
+    USER_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("USER_ACCESS_TOKEN_EXPIRE_MINUTES", "15")) # Например, 15 минут
+    USER_REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("USER_REFRESH_TOKEN_EXPIRE_DAYS", "30")) # Например, 30 дней
 
     # Параметры для Argon2
     ARGON2_TIME_COST: int = int(os.getenv("ARGON2_TIME_COST", "2"))
@@ -81,6 +88,7 @@ def get_pass_db_url():
 
 def get_auth_data():
     """Получение данных для аутентификации."""
+    # Изменено: Теперь возвращает только общие данные
     return {"secret_key": config.SECRET_KEY, "algorithm": config.ALGORITHM}
 
 
