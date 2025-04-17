@@ -22,7 +22,7 @@ from app.debug import router as debug_router
 
 # Импорт конфигурации и вспомогательных функций
 from app.database import test_db_connection
-from app.config import config # Используем config напрямую
+from app.config import config, get_oauth_config # Используем config напрямую
 from app.jwt_auth import auth_middleware, get_async_session, redis_client
 
 # --- Настройка логирования ---
