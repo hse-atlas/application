@@ -344,179 +344,110 @@ async def should_refresh_token(payload) -> bool:
     return need_refresh
 
 
-# Изменено: Middleware использует usr_type из токена, проверку статуса, передает user_type и роль при создании токенов
+# Изменено: Middleware читает токен ТОЛЬКО из заголовка Authorization
+# и НЕ пытается обновить токен через refresh
 async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async_session)):
-    logger.info(f"Auth middleware check for path: {request.url.path}")
+    """
+    Проверяет access токен из заголовка Authorization, загружает пользователя,
+    проверяет статус и устанавливает user/user_type в request.state.
+    Инициирует обновление через скользящее окно (токены помещаются в state).
+    Выбрасывает HTTPException при ошибках аутентификации/авторизации.
+    НЕ пытается использовать refresh токен для обновления.
+    """
+    logger.debug(f"Auth middleware running for path: {request.url.path}") # Debug
 
-    # Получаем токены из cookies или заголовка Authorization
-    access_token = request.cookies.get("admins_access_token") or request.cookies.get("users_access_token")
-    logger.debug(f"Access token from cookies: {'Found' if access_token else 'Not found'}") # Debug level
+    # Получаем токен ТОЛЬКО из заголовка
+    access_token = None
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        access_token = auth_header.replace("Bearer ", "")
+        logger.debug("Access token found in Authorization header")
+    else:
+        logger.debug("No Bearer token found in Authorization header")
 
-    # Или в заголовке Authorization
+    # Если токен не найден, для защищенного пути это ошибка
     if not access_token:
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            access_token = auth_header.replace("Bearer ", "")
-            logger.debug("Access token found in Authorization header") # Debug level
-
-    if not access_token:
-        logger.info("No access token found in request")
-        # Для защищенных путей отсутствие токена будет обработано позже
-        # Для публичных путей (если проверка добавлена во wrapper) сюда не дойдем
-        # Если проверки публичных путей нет, то нужно добавить здесь или в wrapper
-        return None # Пока оставляем так, предполагая проверку в wrapper
+        logger.warning(f"No access token provided for protected path: {request.url.path}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
 
     try:
-        # Декодируем и проверяем токен
-        logger.debug("Decoding access token") # Debug level
-        payload = await decode_token(access_token)
+        # Декодируем и проверяем access токен
+        logger.debug("Decoding access token")
+        payload = await decode_token(access_token) # Может выбросить HTTPException (401)
         token_type = payload.get("type")
         user_id = payload.get("sub")
         token_user_type = payload.get("usr_type")
         logger.info(f"Token decoded: type={token_type}, user_id={user_id}, user_type={token_user_type}")
 
-        # Проверяем тип и наличие данных
-        if token_type != "access": raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
-        if not user_id or not token_user_type: raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+        # Проверки
+        if token_type != "access":
+            logger.warning(f"Invalid token type received: {token_type}")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+        if not user_id or not token_user_type:
+            logger.warning("Token payload missing 'sub' or 'usr_type'")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
 
         # --- Проверка пользователя в БД и получение роли ---
         user = None
-        user_role = None # Инициализация роли
+        user_role = None # Инициализация
         if token_user_type == "admin":
-            logger.debug(f"Looking for admin with ID: {user_id}") # Debug level
+            logger.debug(f"Looking for admin with ID: {user_id}")
             result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
             user = result.scalar_one_or_none()
-            if user:
-                logger.info(f"Admin found: ID={user.id}")
-                request.state.user, request.state.user_type = user, "admin"
-            else:
-                logger.warning(f"Admin with ID {user_id} (from token) not found in database")
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin not found")
+            if not user:
+                 logger.warning(f"Admin with ID {user_id} (from token) not found")
+                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin not found")
+            logger.info(f"Admin found: ID={user.id}")
+            request.state.user, request.state.user_type = user, "admin"
         elif token_user_type == "user":
-            logger.debug(f"Looking for user with ID: {user_id}") # Debug level
+            logger.debug(f"Looking for user with ID: {user_id}")
             result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
             user = result.scalar_one_or_none()
-            if user:
-                if user.status == UserStatus.BLOCKED:
-                    logger.warning(f"User {user_id} is blocked.")
-                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is blocked")
-                logger.info(f"User found: ID={user.id}, Role={user.role}") # Логируем роль
-                request.state.user, request.state.user_type = user, "user"
-                user_role = user.role # <--- Сохраняем роль пользователя
-            else:
-                logger.warning(f"User with ID {user_id} (from token) not found in database")
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+            if not user:
+                 logger.warning(f"User with ID {user_id} (from token) not found")
+                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+            # Проверка статуса
+            if user.status == UserStatus.BLOCKED:
+                logger.warning(f"User {user_id} is blocked.")
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is blocked")
+            logger.info(f"User found: ID={user.id}, Role={user.role}")
+            request.state.user, request.state.user_type = user, "user"
+            user_role = user.role # Сохраняем роль для скользящего окна
         else:
              logger.error(f"Invalid user_type '{token_user_type}' found in token payload")
-             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user type in token")
 
-        # --- СКОЛЬЗЯЩЕЕ ОКНО ---
+        # --- Скользящее окно ---
         is_oauth_redirect = ( request.url.path == "/" and (request.query_params.get("access_token") or request.query_params.get("refresh_token")))
         if await should_refresh_token(payload) and not is_oauth_redirect:
             logger.info(f"Token requires refresh (sliding window) for {token_user_type}")
-
-            # --- Изменено: Формируем token_data с ролью для пользователя ---
             token_data = {"sub": user_id}
-            if token_user_type == "user" and user_role: # Используем роль из загруженного user
-                token_data["role"] = user_role
-                logger.debug(f"Adding role '{user_role}' to token data (sliding window)")
-
-            # --- Передаем token_data в функции создания ---
+            if token_user_type == "user" and user_role: token_data["role"] = user_role
             new_access_token = await create_access_token(token_data, user_type=token_user_type)
             new_refresh_token = await create_refresh_token(token_data, user_type=token_user_type)
-            logger.info(f"New tokens created via sliding window: access={new_access_token[:10]}..., refresh={new_refresh_token[:10]}...")
-
+            # Помещаем в state. Фронтенд должен сам их обработать, если получит (например, из заголовков)
             request.state.new_access_token = new_access_token
             request.state.new_refresh_token = new_refresh_token
             logger.info("Scheduling old access token revocation with delay (sliding window)")
             await revoke_token(access_token, delay_seconds=5)
 
-        logger.info(f"Auth middleware check completed successfully for {token_user_type}")
-        return user
+        # logger.info(f"Auth middleware check completed successfully for {token_user_type}") # Логируется в wrapper'е
+        return user # Возвращаем найденный объект пользователя
 
     except HTTPException as e:
-        # --- Обработка ошибки Access Token и проверка Refresh Token ---
-        logger.warning(f"HTTP exception in auth middleware: {e.detail} ({e.status_code})")
-        if e.status_code not in [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN]: raise e
+        # Ловим ошибки от decode_token или из проверок выше
+        logger.warning(f"HTTP exception during access token processing: {e.detail} ({e.status_code})")
+        # Перебрасываем ошибку дальше, обновление - задача клиента
+        raise e from e
+    except Exception as e:
+         # Ловим другие возможные ошибки при обработке
+         logger.error(f"Unexpected error in auth_middleware: {str(e)}", exc_info=True)
+         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Authentication processing error") from e
 
-        refresh_token = request.cookies.get("admins_refresh_token") or request.cookies.get("users_refresh_token")
-        if not refresh_token:
-            logger.warning("No refresh token found to attempt renewal.")
-            raise HTTPException(status_code=e.status_code, detail=e.detail, headers={"WWW-Authenticate": "Bearer"}) from e
-
-        try:
-            # --- Обработка Refresh Token ---
-            logger.info("Attempting to use refresh token")
-            refresh_payload = await decode_token(refresh_token)
-            if refresh_payload.get("type") != "refresh": raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token type")
-
-            jti = refresh_payload.get("jti")
-            user_id = refresh_payload.get("sub")
-            refresh_user_type = refresh_payload.get("usr_type")
-            logger.info(f"Refresh token decoded: jti={jti}, user_id={user_id}, user_type={refresh_user_type}")
-
-            if not jti or not await redis_client.exists(f"refresh_token:{jti}"): raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or revoked refresh token")
-            if not user_id or not refresh_user_type: raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token payload")
-
-            # --- Отзыв старого refresh токена ---
-            logger.info(f"Revoking used refresh token {jti}")
-            exp = refresh_payload.get("exp", datetime.now(timezone.utc).timestamp() + 1)
-            ttl = max(1, int(exp - datetime.now(timezone.utc).timestamp()))
-            await redis_client.setex(f"blacklist:{jti}", ttl, "1")
-            await redis_client.delete(f"refresh_token:{jti}")
-
-            # --- Загрузка пользователя из БД для получения роли и статуса ---
-            user = None
-            user_role = None # Инициализация роли
-            if refresh_user_type == "admin":
-                result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
-                user = result.scalar_one_or_none()
-                if user: request.state.user_type = "admin"
-            elif refresh_user_type == "user":
-                result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
-                user = result.scalar_one_or_none()
-                if user:
-                    if user.status == UserStatus.BLOCKED: raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is blocked")
-                    request.state.user_type = "user"
-                    user_role = user.role # <--- Получаем роль пользователя
-                    logger.info(f"User {user_id} found after refresh with role: {user_role}")
-            else: raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token payload")
-            if not user: raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-
-            # --- Создаем новую пару токенов ---
-            logger.info(f"Creating new tokens using refresh token for {refresh_user_type}")
-
-            # --- Изменено: Формируем token_data с ролью для пользователя ---
-            token_data = {"sub": user_id}
-            if refresh_user_type == "user" and user_role:
-                token_data["role"] = user_role
-                logger.debug(f"Adding role '{user_role}' to token data (refresh flow)")
-
-            # --- Передаем token_data в функции создания ---
-            new_access_token = await create_access_token(token_data, user_type=refresh_user_type)
-            new_refresh_token = await create_refresh_token(token_data, user_type=refresh_user_type)
-            logger.info(f"New tokens created via refresh: access={new_access_token[:10]}..., refresh={new_refresh_token[:10]}...")
-
-            request.state.new_access_token = new_access_token
-            request.state.new_refresh_token = new_refresh_token
-            request.state.user = user # Устанавливаем пользователя в state
-            logger.info(f"Token refresh completed successfully for {refresh_user_type}")
-            return user # Возвращаем пользователя
-
-        except (HTTPException, JWTError) as refresh_exc:
-            # ... (обработка ошибок refresh токена, удаление cookie, raise 401) ...
-            logger.error(f"Error during refresh token handling: {str(refresh_exc)}")
-            response_obj = Response(status_code=status.HTTP_401_UNAUTHORIZED)
-            response_obj.delete_cookie("admins_access_token")
-            response_obj.delete_cookie("admins_refresh_token")
-            response_obj.delete_cookie("users_access_token")
-            response_obj.delete_cookie("users_refresh_token")
-            logger.info("Cleared potentially invalid auth cookies after refresh failure.")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Session expired or invalid. Please login again.",
-                headers={"WWW-Authenticate": "Bearer"},
-            ) from refresh_exc
 
 
 # Изменено: Функция обновления использует usr_type из токена и возвращает его
