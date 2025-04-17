@@ -15,6 +15,7 @@ from app.schemas import (
     ProjectDetailResponse,
     UserResponse,
     ProjectOAuthSettings,
+    ProjectPublicOAuthConfig,
 )
 
 router = APIRouter(prefix='/api/projects', tags=['Projects'])
@@ -23,6 +24,7 @@ router = APIRouter(prefix='/api/projects', tags=['Projects'])
 async def get_async_session() -> AsyncSession:
     async with async_session_maker() as session:
         yield session
+
 
 
 @router.post("/", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
@@ -340,4 +342,50 @@ async def update_project_oauth(
         url=db_project.url,
         user_count=user_count,
         oauth_enabled=db_project.oauth_enabled,
+    )
+
+# --- Новый публичный эндпоинт ---
+@router.get("/{project_id}/oauth-config",
+            response_model=ProjectPublicOAuthConfig,
+            tags=['Public Project Info']) # Добавляем тег для Swagger
+async def get_project_public_oauth_config(
+    project_id: UUID = Path(..., title="The ID of the project to get OAuth config for"), # Используем Path для валидации UUID в пути
+    session: AsyncSession = Depends(get_async_session),
+):
+    """
+    Возвращает публичную конфигурацию OAuth для указанного проекта.
+    Показывает, включен ли OAuth и какие провайдеры активны.
+    Не требует аутентификации.
+    """
+    # Ищем проект по ID
+    stmt = select(
+        ProjectsBase.oauth_enabled,
+        ProjectsBase.oauth_providers
+    ).where(
+        # Используем cast для сравнения UUID со строкой в БД, если ID строковый
+        # Если ID в БД типа UUID, cast не нужен: ProjectsBase.id == project_id
+        cast(ProjectsBase.id, String) == str(project_id)
+    )
+    result = await session.execute(stmt)
+    project_config = result.first() # Используем first(), т.к. нам нужна одна строка
+
+    if not project_config:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    oauth_enabled = project_config.oauth_enabled
+    enabled_providers = []
+
+    # Если OAuth включен и есть настройки провайдеров
+    if oauth_enabled and project_config.oauth_providers:
+        # Проходим по настройкам провайдеров и добавляем активных
+        # oauth_providers хранится как JSON/Dict в БД
+        providers_settings: Dict[str, Any] = project_config.oauth_providers
+        for provider_name, settings in providers_settings.items():
+            # Проверяем, что ключ "enabled" существует и равен True
+            if isinstance(settings, dict) and settings.get("enabled", False):
+                enabled_providers.append(provider_name)
+
+    return ProjectPublicOAuthConfig(
+        oauth_enabled=oauth_enabled,
+        enabled_providers=enabled_providers
     )

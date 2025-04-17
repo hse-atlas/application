@@ -233,6 +233,10 @@ class ProjectDetailResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+# --- Модель ответа для публичных настроек OAuth ---
+class ProjectPublicOAuthConfig(BaseModel):
+    oauth_enabled: bool
+    enabled_providers: List[str] # Список имен активных провайдеров
 
 # ----------------------------------------------------------------------------
 # Pydantic-модели (пользователь)

@@ -431,3 +431,19 @@ export const updateProjectOAuth = async (project_id, oauth_settings) => {
     throw error;
   }
 };
+
+/**
+ * Получает публичную конфигурацию OAuth для проекта
+ * @param {string} projectId - ID проекта
+ * @returns {Promise<Object>} - Объект с { oauth_enabled: boolean, enabled_providers: string[] }
+ */
+export const getProjectOAuthConfig = async (projectId) => {
+  try {
+    const response = await api.get(`/api/projects/${projectId}/oauth-config`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching OAuth config for project ${projectId}:`, error);
+    // Перебрасываем ошибку, чтобы ее можно было поймать в компоненте
+    throw error;
+  }
+};
