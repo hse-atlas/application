@@ -8,7 +8,7 @@ import redis.asyncio as redis
 from app.config import config, get_auth_data, get_redis_url # Добавлено: импорт config
 from app.database import async_session_maker
 from app.schemas import AdminsBase, UsersBase, UserStatus # Добавлено: UserStatus
-from fastapi import Depends, HTTPException, status, Request
+from fastapi import Depends, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
