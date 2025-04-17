@@ -344,7 +344,7 @@ async def should_refresh_token(payload) -> bool:
     return need_refresh
 
 
-# Изменено: Middleware использует usr_type из токена, проверку статуса, передает user_type при создании токенов
+# Изменено: Middleware использует usr_type из токена, проверку статуса, передает user_type и роль при создании токенов
 async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async_session)):
     logger.info(f"Auth middleware check for path: {request.url.path}")
 
@@ -361,52 +361,34 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
 
     if not access_token:
         logger.info("No access token found in request")
-        # Требуем аутентификацию для защищенных маршрутов (пример)
-        # if request.url.path.startswith("/api/protected"):
-        #     logger.warning(f"Protected route {request.url.path} accessed without auth token")
-        #     raise HTTPException(...)
-        return None # Для публичных роутов
+        # Для защищенных путей отсутствие токена будет обработано позже
+        # Для публичных путей (если проверка добавлена во wrapper) сюда не дойдем
+        # Если проверки публичных путей нет, то нужно добавить здесь или в wrapper
+        return None # Пока оставляем так, предполагая проверку в wrapper
 
     try:
         # Декодируем и проверяем токен
         logger.debug("Decoding access token") # Debug level
         payload = await decode_token(access_token)
         token_type = payload.get("type")
-
-        # Изменено: Получаем user_id и user_type из токена
         user_id = payload.get("sub")
         token_user_type = payload.get("usr_type")
-
         logger.info(f"Token decoded: type={token_type}, user_id={user_id}, user_type={token_user_type}")
 
-        # Проверяем, что это access токен
-        if token_type != "access":
-            logger.warning(f"Expected access token, but got {token_type}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        # Проверяем тип и наличие данных
+        if token_type != "access": raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+        if not user_id or not token_user_type: raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
 
-        # Изменено: Проверяем наличие user_id и user_type
-        if not user_id or not token_user_type:
-            logger.warning("Token payload missing 'sub' or 'usr_type' claim")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token payload",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        # --- Изменено: Проверка пользователя в БД на основе token_user_type ---
+        # --- Проверка пользователя в БД и получение роли ---
         user = None
+        user_role = None # Инициализация роли
         if token_user_type == "admin":
             logger.debug(f"Looking for admin with ID: {user_id}") # Debug level
             result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
             user = result.scalar_one_or_none()
             if user:
                 logger.info(f"Admin found: ID={user.id}")
-                request.state.user = user
-                request.state.user_type = "admin" # Устанавливаем в state
+                request.state.user, request.state.user_type = user, "admin"
             else:
                 logger.warning(f"Admin with ID {user_id} (from token) not found in database")
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin not found")
@@ -415,13 +397,12 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
             result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
             user = result.scalar_one_or_none()
             if user:
-                 # Добавлено: Проверяем статус пользователя из БД
                 if user.status == UserStatus.BLOCKED:
                     logger.warning(f"User {user_id} is blocked.")
                     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is blocked")
-                logger.info(f"User found: ID={user.id}")
-                request.state.user = user
-                request.state.user_type = "user" # Устанавливаем в state
+                logger.info(f"User found: ID={user.id}, Role={user.role}") # Логируем роль
+                request.state.user, request.state.user_type = user, "user"
+                user_role = user.role # <--- Сохраняем роль пользователя
             else:
                 logger.warning(f"User with ID {user_id} (from token) not found in database")
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
@@ -430,24 +411,23 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
              raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
 
         # --- СКОЛЬЗЯЩЕЕ ОКНО ---
-        is_oauth_redirect = (
-                request.url.path == "/" and # Простой пример проверки редиректа
-                (request.query_params.get("access_token") or request.query_params.get("refresh_token"))
-        )
-
-        # Изменено: Обновляем для любого типа пользователя, если нужно
+        is_oauth_redirect = ( request.url.path == "/" and (request.query_params.get("access_token") or request.query_params.get("refresh_token")))
         if await should_refresh_token(payload) and not is_oauth_redirect:
             logger.info(f"Token requires refresh (sliding window) for {token_user_type}")
-            # Изменено: Используем token_user_type при создании новых токенов
-            new_access_token = await create_access_token({"sub": user_id}, user_type=token_user_type)
-            new_refresh_token = await create_refresh_token({"sub": user_id}, user_type=token_user_type)
+
+            # --- Изменено: Формируем token_data с ролью для пользователя ---
+            token_data = {"sub": user_id}
+            if token_user_type == "user" and user_role: # Используем роль из загруженного user
+                token_data["role"] = user_role
+                logger.debug(f"Adding role '{user_role}' to token data (sliding window)")
+
+            # --- Передаем token_data в функции создания ---
+            new_access_token = await create_access_token(token_data, user_type=token_user_type)
+            new_refresh_token = await create_refresh_token(token_data, user_type=token_user_type)
             logger.info(f"New tokens created via sliding window: access={new_access_token[:10]}..., refresh={new_refresh_token[:10]}...")
 
-            # Устанавливаем новые токены в request.state, чтобы они были добавлены в ответ
             request.state.new_access_token = new_access_token
             request.state.new_refresh_token = new_refresh_token
-
-            # Отзываем старый access токен с задержкой
             logger.info("Scheduling old access token revocation with delay (sliding window)")
             await revoke_token(access_token, delay_seconds=5)
 
@@ -455,113 +435,86 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
         return user
 
     except HTTPException as e:
-        # --- Обработка ошибки и проверка Refresh Token ---
+        # --- Обработка ошибки Access Token и проверка Refresh Token ---
         logger.warning(f"HTTP exception in auth middleware: {e.detail} ({e.status_code})")
-
-        # Только если ошибка была 401 или 403 (истек, отозван, заблокирован), пытаемся обновить
-        if e.status_code not in [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN]:
-             raise e # Перебрасываем другие ошибки (напр. 404 Not Found)
+        if e.status_code not in [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN]: raise e
 
         refresh_token = request.cookies.get("admins_refresh_token") or request.cookies.get("users_refresh_token")
-        logger.debug(f"Refresh token from cookies (after exception): {'Found' if refresh_token else 'Not found'}") # Debug
-
         if not refresh_token:
-            # Если access токен был невалиден и нет refresh токена, то это конец
             logger.warning("No refresh token found to attempt renewal.")
-            raise HTTPException(
-                 status_code=e.status_code, # Используем исходный статус ошибки
-                 detail=e.detail, # Используем исходную деталь ошибки
-                 headers={"WWW-Authenticate": "Bearer"},
-            ) from e # Сохраняем исходное исключение
+            raise HTTPException(status_code=e.status_code, detail=e.detail, headers={"WWW-Authenticate": "Bearer"}) from e
 
         try:
-            # Декодируем и проверяем refresh токен
+            # --- Обработка Refresh Token ---
             logger.info("Attempting to use refresh token")
             refresh_payload = await decode_token(refresh_token)
+            if refresh_payload.get("type") != "refresh": raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token type")
 
-            # Проверяем, что это refresh токен
-            if refresh_payload.get("type") != "refresh":
-                logger.warning(f"Expected refresh token, but got {refresh_payload.get('type')}")
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token type")
-
-            # Получаем jti, user_id, user_type из refresh токена
             jti = refresh_payload.get("jti")
             user_id = refresh_payload.get("sub")
             refresh_user_type = refresh_payload.get("usr_type")
-
             logger.info(f"Refresh token decoded: jti={jti}, user_id={user_id}, user_type={refresh_user_type}")
 
-            # Проверяем наличие jti в Redis
-            if not jti or not await redis_client.exists(f"refresh_token:{jti}"):
-                logger.warning(f"Invalid or revoked refresh token JTI: {jti}")
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or revoked refresh token")
+            if not jti or not await redis_client.exists(f"refresh_token:{jti}"): raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or revoked refresh token")
+            if not user_id or not refresh_user_type: raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token payload")
 
-            # Проверяем user_id и user_type
-            if not user_id or not refresh_user_type:
-                logger.warning("Refresh token missing 'sub' or 'usr_type' claim")
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token payload")
-
-            # --- Отзываем использованный refresh токен (one-time use) ---
+            # --- Отзыв старого refresh токена ---
             logger.info(f"Revoking used refresh token {jti}")
-            # Добавляем в черный список
             exp = refresh_payload.get("exp", datetime.now(timezone.utc).timestamp() + 1)
             ttl = max(1, int(exp - datetime.now(timezone.utc).timestamp()))
             await redis_client.setex(f"blacklist:{jti}", ttl, "1")
-            # Удаляем из списка активных
             await redis_client.delete(f"refresh_token:{jti}")
 
-            # --- Создаем новую пару токенов, используя refresh_user_type ---
-            logger.info(f"Creating new tokens using refresh token for {refresh_user_type}")
-            new_access_token = await create_access_token({"sub": user_id}, user_type=refresh_user_type)
-            new_refresh_token = await create_refresh_token({"sub": user_id}, user_type=refresh_user_type)
-            logger.info(f"New tokens created via refresh: access={new_access_token[:10]}..., refresh={new_refresh_token[:10]}...")
-
-            # Устанавливаем новые токены в ответе
-            request.state.new_access_token = new_access_token
-            request.state.new_refresh_token = new_refresh_token
-
-            # --- Загружаем пользователя из БД (важно для установки user в state) ---
+            # --- Загрузка пользователя из БД для получения роли и статуса ---
             user = None
+            user_role = None # Инициализация роли
             if refresh_user_type == "admin":
-                logger.debug(f"Looking for admin with ID: {user_id} (after refresh)")
                 result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
                 user = result.scalar_one_or_none()
                 if user: request.state.user_type = "admin"
             elif refresh_user_type == "user":
-                logger.debug(f"Looking for user with ID: {user_id} (after refresh)")
                 result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
                 user = result.scalar_one_or_none()
                 if user:
-                    if user.status == UserStatus.BLOCKED: # Повторная проверка статуса
-                        logger.warning(f"User {user_id} is blocked (checked after refresh).")
-                        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is blocked")
+                    if user.status == UserStatus.BLOCKED: raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is blocked")
                     request.state.user_type = "user"
-            else:
-                 logger.error(f"Invalid user_type '{refresh_user_type}' found in refresh token payload")
-                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token payload")
+                    user_role = user.role # <--- Получаем роль пользователя
+                    logger.info(f"User {user_id} found after refresh with role: {user_role}")
+            else: raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token payload")
+            if not user: raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
-            if not user:
-                 logger.warning(f"User with ID {user_id} and type '{refresh_user_type}' not found after refresh.")
-                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+            # --- Создаем новую пару токенов ---
+            logger.info(f"Creating new tokens using refresh token for {refresh_user_type}")
 
-            # Добавляем информацию о пользователе в request.state
-            request.state.user = user
+            # --- Изменено: Формируем token_data с ролью для пользователя ---
+            token_data = {"sub": user_id}
+            if refresh_user_type == "user" and user_role:
+                token_data["role"] = user_role
+                logger.debug(f"Adding role '{user_role}' to token data (refresh flow)")
+
+            # --- Передаем token_data в функции создания ---
+            new_access_token = await create_access_token(token_data, user_type=refresh_user_type)
+            new_refresh_token = await create_refresh_token(token_data, user_type=refresh_user_type)
+            logger.info(f"New tokens created via refresh: access={new_access_token[:10]}..., refresh={new_refresh_token[:10]}...")
+
+            request.state.new_access_token = new_access_token
+            request.state.new_refresh_token = new_refresh_token
+            request.state.user = user # Устанавливаем пользователя в state
             logger.info(f"Token refresh completed successfully for {refresh_user_type}")
-            return user # Возвращаем пользователя, чтобы запрос продолжился с новой аутентификацией
+            return user # Возвращаем пользователя
 
         except (HTTPException, JWTError) as refresh_exc:
-            # Если refresh токен недействителен, требуем повторную аутентификацию
+            # ... (обработка ошибок refresh токена, удаление cookie, raise 401) ...
             logger.error(f"Error during refresh token handling: {str(refresh_exc)}")
-            # Удаляем невалидные cookie, если они есть
-            response = Response(status_code=status.HTTP_401_UNAUTHORIZED)
-            response.delete_cookie("admins_access_token")
-            response.delete_cookie("admins_refresh_token")
-            response.delete_cookie("users_access_token")
-            response.delete_cookie("users_refresh_token")
-            # Вызываем исключение
+            response_obj = Response(status_code=status.HTTP_401_UNAUTHORIZED)
+            response_obj.delete_cookie("admins_access_token")
+            response_obj.delete_cookie("admins_refresh_token")
+            response_obj.delete_cookie("users_access_token")
+            response_obj.delete_cookie("users_refresh_token")
+            logger.info("Cleared potentially invalid auth cookies after refresh failure.")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Session expired or invalid. Please login again.", # Более общее сообщение
+                detail="Session expired or invalid. Please login again.",
                 headers={"WWW-Authenticate": "Bearer"},
             ) from refresh_exc
 
@@ -611,21 +564,29 @@ async def refresh_tokens(refresh_token: str, db: AsyncSession = Depends(get_asyn
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Дополнительная проверка пользователя в БД (опционально, но рекомендуется)
-        user = None
+        # --- Изменено: Загружаем пользователя из БД для получения актуальной роли и статуса ---
+        user_role = None # Инициализация
+        db_user_object = None # Используем другое имя переменной, чтобы не конфликтовать с внешней 'user'
         if user_type == "admin":
             result = await db.execute(select(AdminsBase).where(AdminsBase.id == int(user_id)))
-            user = result.scalar_one_or_none()
+            db_user_object = result.scalar_one_or_none()
+            # Роль админа не добавляем в токен
         elif user_type == "user":
             result = await db.execute(select(UsersBase).where(UsersBase.id == int(user_id)))
-            user = result.scalar_one_or_none()
-            if user and user.status == UserStatus.BLOCKED:
-                 logger.warning(f"User {user_id} is blocked. Refresh denied.")
-                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is blocked")
-        if not user:
+            db_user_object = result.scalar_one_or_none()
+            if db_user_object:
+                # Проверяем статус перед обновлением
+                if db_user_object.status == UserStatus.BLOCKED:
+                     logger.warning(f"User {user_id} is blocked. Refresh denied.")
+                     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is blocked")
+                # Получаем роль из БД
+                user_role = db_user_object.role
+                logger.info(f"User {user_id} found in DB with role: {user_role}")
+            # else: Пользователь не найден - обработается ниже
+        # Проверяем, найден ли пользователь
+        if not db_user_object:
              logger.warning(f"User {user_id} (type {user_type}) not found in DB during refresh.")
              raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-
 
         # --- Отзываем использованный refresh токен (one-time use) ---
         logger.info(f"Revoking used refresh token {jti} for {user_type} ID {user_id}")
@@ -636,10 +597,23 @@ async def refresh_tokens(refresh_token: str, db: AsyncSession = Depends(get_asyn
 
         # --- Создаем новую пару токенов, используя user_type ---
         logger.info(f"Creating new tokens via refresh for {user_type} ID {user_id}")
-        new_access_token = await create_access_token({"sub": user_id}, user_type=user_type)
-        new_refresh_token = await create_refresh_token({"sub": user_id}, user_type=user_type)
 
-        # Изменено: Возвращаем user_type
+        # --- Изменено: Формируем token_data с ролью только для пользователя ---
+        token_data = {"sub": user_id}
+        if user_type == "user":
+            # Используем роль, полученную из db_user_object
+            if user_role:
+                token_data["role"] = user_role
+                logger.debug(f"Adding role '{user_role}' to token data for user {user_id}")
+            else:
+                # Этого не должно произойти, если модель UserBase всегда имеет роль, но для безопасности
+                logger.warning(f"Role attribute not found for user {user_id} during refresh token creation, role not added to token.")
+
+        # --- Передаем сформированный token_data в функции создания ---
+        new_access_token = await create_access_token(token_data, user_type=user_type)
+        new_refresh_token = await create_refresh_token(token_data, user_type=user_type)
+
+        # Возвращаем user_type для корректной установки cookie во внешнем коде
         return {
             "access_token": new_access_token,
             "refresh_token": new_refresh_token,

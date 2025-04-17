@@ -410,15 +410,26 @@ async def process_user_oauth(email: str, name: str, provider: str, provider_user
          # Изменено: Убираем refresh
          # await session.refresh(user)
 
-    logger.info(f"Creating JWT tokens for user ID: {user.id}")
-    access_token = await create_access_token({"sub": str(user.id)}, user_type="user")
-    refresh_token = await create_refresh_token({"sub": str(user.id)}, user_type="user")
-    logger.info(f"Tokens created for user {user.id}")
+        # Создаем JWT токены
+    logger.info(f"Creating JWT tokens for user ID: {user.id}, role: {user.role}") # Логируем роль
+    try:
+        # Изменено: Добавляем 'role' в данные для токена
+        token_data = {"sub": str(user.id), "role": user.role}
 
-    redirect_url = f"/?type=user&project_id={project_id}&access_token={access_token}&refresh_token={refresh_token}"
-    response = RedirectResponse(url=redirect_url)
-    logger.info(f"Redirecting user to: {redirect_url}")
-    response.set_cookie(key="users_access_token", value=access_token, httponly=True, secure=True, samesite="strict")
-    response.set_cookie(key="users_refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict")
-    logger.info("User auth cookies set.")
-    return response
+        # Изменено: Передаем token_data и user_type="user"
+        access_token = await create_access_token(token_data, user_type="user")
+        refresh_token = await create_refresh_token(token_data, user_type="user")
+
+        logger.info(f"Tokens created for user {user.id}")
+
+        redirect_url = f"/?type=user&project_id={project_id}&access_token={access_token}&refresh_token={refresh_token}"
+        response = RedirectResponse(url=redirect_url)
+        logger.info(f"Redirecting user to: {redirect_url}")
+        response.set_cookie(key="users_access_token", value=access_token, httponly=True, secure=True, samesite="strict")
+        response.set_cookie(key="users_refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict")
+        logger.info("User auth cookies set.")
+        return response
+    
+    except Exception as e:
+        logger.error(f"Error creating JWT tokens for user {user.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate authentication tokens")

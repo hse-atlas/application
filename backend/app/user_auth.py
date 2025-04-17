@@ -150,13 +150,16 @@ async def user_login(
             detail="Invalid email or password"
         )
 
-    # Генерация токенов
-    logger.info(f"User login successful for project {project_id}: email={user_data.email}, id={user.id}")
+     # Генерация токенов
+    logger.info(f"User login successful for project {project_id}: email={user_data.email}, id={user.id}, role={user.role}") # Логируем роль
     logger.debug(f"Generating tokens for user id={user.id}")
     try:
-        # Изменено: Передаем user_type="user"
-        access_token = await create_access_token({"sub": str(user.id)}, user_type="user")
-        refresh_token = await create_refresh_token({"sub": str(user.id)}, user_type="user")
+        # Изменено: Добавляем 'role' в данные для токена
+        token_data = {"sub": str(user.id), "role": user.role}
+
+        # Изменено: Передаем token_data и user_type="user"
+        access_token = await create_access_token(token_data, user_type="user")
+        refresh_token = await create_refresh_token(token_data, user_type="user")
 
         logger.debug(f"Tokens generated successfully for user id={user.id}")
 
