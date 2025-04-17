@@ -303,6 +303,7 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
         access_token = auth_header.replace("Bearer ", "")
+        logger.info("Access token found in Authorization header")
 
     if not access_token:
         logger.info("No access token found in request")
@@ -410,7 +411,7 @@ async def auth_middleware(request: Request, db: AsyncSession = Depends(get_async
 
     except HTTPException as e:
         logger.warning(f"HTTP exception in auth middleware: {e.detail}")
-        raise  # Просто перебрасываем исключение
+        raise  # Просто перебрасываем исключение, отдельная логика обновления теперь в специальных эндпоинтах
     except Exception as e:
         logger.error(f"Unexpected error in auth middleware: {str(e)}")
         raise HTTPException(

@@ -284,11 +284,11 @@ def extract_user_info(provider: str, user_info, token_response=None):
         email = None
         name = "Unknown"
 
-    # Базовая валидация
-    if not email:
-        raise HTTPException(status_code=400, detail="Email not provided by OAuth provider")
+        # Базовая валидация
+        if not email:
+            raise HTTPException(status_code=400, detail="Email not provided by OAuth provider")
 
-    return email, name
+        return email, name
 
 
 # Обработка OAuth для администраторов

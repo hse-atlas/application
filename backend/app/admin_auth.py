@@ -182,7 +182,7 @@ async def admin_token_refresh(
     """
     logger.info("Admin token refresh request received")
 
-    # Получаем refresh token только из тела запроса
+    # Получаем refresh token только из тела запроса или заголовка
     refresh_token = None
 
     # 1. Из body запроса, если передан
@@ -190,7 +190,7 @@ async def admin_token_refresh(
         refresh_token = refresh_data["refresh_token"]
         logger.info("Refresh token found in request body")
 
-    # 2. Из заголовка Authorization, если не найден в body
+    # 2. Из заголовка Authorization
     if not refresh_token:
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):

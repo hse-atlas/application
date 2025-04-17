@@ -1,6 +1,3 @@
-// Файл: web-application/src/services/tokenService.js
-// Полностью переписанная служба работы с токенами для использования только localStorage
-
 const TOKEN_NAMES = {
   ADMIN_ACCESS: "admin_access_token",
   ADMIN_REFRESH: "admin_refresh_token",

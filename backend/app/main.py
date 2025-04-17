@@ -147,13 +147,6 @@ async def auth_middleware_wrapper(request: Request, call_next):
                 if result:
                     logger.info("Authentication successful", extra=log_context)
 
-                # Логируем новую информацию о токенах (для "скользящего окна")
-                if hasattr(request.state, "new_access_token") and request.state.new_access_token:
-                    logger.info("Tokens refreshed using sliding window mechanism", extra={
-                        **log_context,
-                        "token_refresh": True
-                    })
-
             except Exception as e:
                 # Фиксируем текущий user_type при ошибке
                 log_context["user_type"] = getattr(request.state, "user_type", "error")

@@ -22,20 +22,27 @@ const Login = () => {
         password: values.password,
       });
 
+      // Проверяем наличие токенов в ответе
       const { access_token, refresh_token } = response.data;
 
-      // Сохраняем токены - теперь без явного указания типа пользователя
-      // Тип пользователя определится из самого токена
-      tokenService.saveTokens({ access_token, refresh_token });
+      if (access_token && refresh_token) {
+        // Сохраняем токены в localStorage без указания типа пользователя
+        // Тип пользователя определится из самого токена
+        tokenService.saveTokens({ access_token, refresh_token });
 
-      tokenRefreshService.start();
+        // Запускаем сервис обновления токенов
+        tokenRefreshService.start();
 
-      message.success("Login successful!");
+        message.success("Login successful!");
 
-      setTimeout(() => {
+        setTimeout(() => {
+          setLoading(false);
+          navigate("/");
+        }, 1000);
+      } else {
+        message.error("Invalid response from server");
         setLoading(false);
-        navigate("/");
-      }, 1000);
+      }
     } catch (error) {
       let errorMessage = "An error occurred during login";
 

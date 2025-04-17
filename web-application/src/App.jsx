@@ -22,32 +22,51 @@ function AppContent() {
     const refreshToken = params.get('refresh_token');
 
     if (accessToken && refreshToken) {
-      // Сохранение токенов через сервис без указания типа пользователя
-      // Тип будет определен автоматически из токена
-      tokenService.saveTokens({
-        access_token: accessToken,
-        refresh_token: refreshToken
+      // Добавляем детальное логирование для отладки
+      console.log("OAuth tokens detected in URL:", {
+        access_token_length: accessToken.length,
+        access_token_starts_with: accessToken.substring(0, 10) + '...',
+        refresh_token_length: refreshToken.length,
+        refresh_token_starts_with: refreshToken.substring(0, 10) + '...'
       });
 
-      // Удаление параметров из URL (чтобы они не остались в истории)
-      const cleanUrl = window.location.pathname;
-      window.history.replaceState({}, document.title, cleanUrl);
+      try {
+        // Сохранение токенов через сервис без указания типа пользователя
+        // Тип будет определен автоматически из токена
+        tokenService.saveTokens({
+          access_token: accessToken,
+          refresh_token: refreshToken
+        });
 
-      // Отложенный запуск сервиса обновления токенов
-      // Это дает время для завершения всех редиректов
-      console.log("OAuth detection: Delaying token refresh service startup");
-      setTimeout(() => {
-        console.log("Starting token refresh service after OAuth redirect");
-        tokenRefreshService.start();
-      }, 2000); // Задержка в 2 секунды
+        console.log("Tokens successfully saved to localStorage");
+
+        // Удаление параметров из URL (чтобы они не остались в истории)
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+
+        // Перенаправляем на главную страницу для гарантированной активации
+        // приложения после авторизации
+        window.location.href = '/';
+      } catch (error) {
+        console.error("Error processing OAuth tokens:", error);
+      }
+      return; // Прерываем выполнение, так как будет перезагрузка
+    }
+
+    // Проверка наличия токена в localStorage для запуска сервиса обновления
+    const isEmbedPage = location.pathname.startsWith('/embed/login/') ||
+      location.pathname.startsWith('/embed/register/');
+
+    // Используем метод проверки аутентификации из сервиса
+    if (tokenService.isAuthenticated() && !isEmbedPage) {
+      console.log("User is authenticated, starting token refresh service");
+      tokenRefreshService.start();
     } else {
-      // Проверка наличия токена в localStorage для запуска сервиса обновления
-      const isEmbedPage = location.pathname.startsWith('/embed/login/') ||
-        location.pathname.startsWith('/embed/register/');
+      console.log("User is not authenticated or on embed page, not starting token refresh service");
 
-      // Используем метод проверки аутентификации из сервиса
-      if (tokenService.isAuthenticated() && !isEmbedPage) {
-        tokenRefreshService.start();
+      // Если мы на странице логина или регистрации, убедимся что токены очищены
+      if (location.pathname === '/login' || location.pathname === '/register') {
+        tokenService.clearTokens();
       }
     }
 
@@ -73,7 +92,7 @@ function AppContent() {
 function App() {
   return (
     <Router>
-      <AppContent />
+      <AppContent />  {/* Теперь useLocation работает корректно */}
     </Router>
   );
 }
