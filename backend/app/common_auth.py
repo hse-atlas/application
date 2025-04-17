@@ -1,3 +1,5 @@
+# Добавлено: Импорт Optional
+from typing import Optional
 from fastapi import APIRouter, HTTPException, status, Response, Depends, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -30,7 +32,7 @@ async def get_async_session() -> AsyncSession:
 async def token_refresh(
         request: Request,
         response: Response,
-        # Изменено: refresh_data из тела сделаем необязательным, т.к. ищем в cookie/header
+        # Изменено: Добавлен импорт Optional для корректной работы аннотации типа
         refresh_data: Optional[dict] = None,
         db: AsyncSession = Depends(get_async_session)
 ):
@@ -78,14 +80,14 @@ async def token_refresh(
         logger.info("Attempting to refresh tokens...")
 
         # Логируем начало токена для отладки
-        token_preview = refresh_token[:10] + "..." if refresh_token else "None"
+        token_preview = refresh_token[:10] + "..." if len(refresh_token) > 10 else refresh_token
         logger.debug(f"Using refresh token starting with: {token_preview}")
 
-        # Изменено: Вызываем обновленную функцию refresh_tokens из jwt_auth
+        # Вызываем обновленную функцию refresh_tokens из jwt_auth
         tokens_data = await refresh_tokens(refresh_token, db) # Теперь возвращает и user_type
         logger.info(f"Tokens successfully refreshed for user type: {tokens_data['user_type']}")
 
-        # Изменено: Определяем префикс cookie на основе user_type из ответа refresh_tokens
+        # Определяем префикс cookie на основе user_type из ответа refresh_tokens
         token_prefix = "admins_" if tokens_data['user_type'] == "admin" else "users_"
         logger.info(f"Setting cookies with token prefix: {token_prefix}")
 
@@ -106,7 +108,7 @@ async def token_refresh(
         )
         logger.info("Cookies set with new tokens")
 
-        # Изменено: Возвращаем новые токены в теле ответа (без user_type)
+        # Возвращаем новые токены в теле ответа (без user_type)
         return TokenResponse(
             access_token=tokens_data["access_token"],
             refresh_token=tokens_data["refresh_token"],
