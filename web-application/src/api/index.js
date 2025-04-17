@@ -344,7 +344,6 @@ export const getProjectRedirectUrl = async (project_id) => {
     if (!isValidUUID(project_id)) {
       throw new Error("Invalid project ID format");
     }
-
     const response = await api.get(`/api/projects/${project_id}/url`);
     return response.data;
   } catch (error) {

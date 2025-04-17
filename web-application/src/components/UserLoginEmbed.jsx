@@ -102,6 +102,35 @@ const UserLoginEmbed = () => {
                 refresh_token: response.refresh_token
             }); // Тип user не нужен, saveTokens его больше не принимает
 
+            try {
+                console.log(`[UserLoginEmbed] Attempting to get redirect URL for project ${projectId}`);
+                const redirectUrl = await getProjectRedirectUrl(projectId); // Вызываем API для получения URL
+                console.log(`[UserLoginEmbed] Received redirect URL: ${redirectUrl}`);
+
+                // Проверяем, что URL получен и не пустой
+                if (redirectUrl) {
+                    // ВАЖНО: Очищаем токены из tokenService перед редиректом,
+                    // если родительское окно будет их сохранять из postMessage или localStorage
+                    // tokenService.removeTokens(); // Раскомментируйте, если нужно
+
+                    // Выполняем редирект РОДИТЕЛЬСКОГО ОКНА
+                    console.log(`[UserLoginEmbed] Redirecting parent window to: ${redirectUrl}`);
+                    window.parent.location.href = redirectUrl;
+                    // После этого postMessage не нужен, т.к. страница перезагрузится
+                    setLoading(false); // Можно сбросить лоадер, хотя страница все равно уйдет
+                    return; // Выходим из функции, чтобы не отправить postMessage
+                } else {
+                    // URL не получен или пустой, но логин успешен
+                    console.warn(`[UserLoginEmbed] Redirect URL for project ${projectId} is empty or not configured. Sending tokens via postMessage instead.`);
+                    // Переходим к отправке postMessage (Вариант А)
+                }
+            } catch (urlError) {
+                // Ошибка при получении URL, но логин УЖЕ УСПЕШЕН
+                console.error(`[UserLoginEmbed] Error getting redirect URL: ${urlError.message}. Proceeding with postMessage fallback.`);
+                message.warning("Login successful, but failed to get redirect URL. Sending data to application.");
+            }
+
+
             // Отправляем сообщение родительскому окну
             window.parent.postMessage({
                 type: "ATLAS_AUTH_SUCCESS",

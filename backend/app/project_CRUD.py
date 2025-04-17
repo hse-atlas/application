@@ -275,29 +275,48 @@ async def get_project_details(
     )
 
 
-@router.get("/{project_id}/url", response_model=str)
-async def get_project_url(
-        project_id: UUID,
-        session: AsyncSession = Depends(get_async_session),
-        current_admin=Depends(get_current_admin)
+@router.get(
+    "/{project_id}/url",
+    response_model=str, # Возвращаем строку (URL)
+    summary="Get Project URL", # Краткое описание для Swagger
+    description="Retrieves the configured URL for a specific project by its ID. This endpoint is public.", # Подробное описание
+    responses={ # Документируем возможные ответы
+        status.HTTP_200_OK: {"description": "Project URL retrieved successfully"},
+        status.HTTP_404_NOT_FOUND: {"description": "Project not found"},
+        # Можно добавить 500, если возникнут проблемы с БД
+    }
+)
+async def get_public_project_url( # Переименуем функцию для ясности
+        project_id: UUID, # Получаем project_id из пути
+        session: AsyncSession = Depends(get_async_session) # Зависимость для сессии БД
 ):
     """
-    Получение URL проекта по его ID.
+    Publicly retrieves the URL associated with a given project ID.
     """
-    # Проверяем, владеет ли текущий админ данным проектом
-    stmt = select(ProjectsBase).where(
-        ProjectsBase.id == project_id,
-        ProjectsBase.owner_id == current_admin.id
-    )
+
+    # Запрос к БД: ищем проект только по ID
+    stmt = select(ProjectsBase).where(ProjectsBase.id == project_id)
     result = await session.execute(stmt)
     project = result.scalar_one_or_none()
 
+    # Проверяем, найден ли проект
     if not project:
+        # Если проект не найден, возвращаем 404
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="У вас нет прав для просмотра URL этого проекта или проект не существует"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
         )
 
+    # Проверяем, есть ли у проекта URL
+    if not project.url:
+        # Решаем, что делать, если URL пустой. Можно вернуть 404 или пустую строку/null.
+        # Вернем 404, т.к. запрашиваемый ресурс (URL) отсутствует.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="URL not configured for this project"
+        )
+
+    # Возвращаем найденный URL
     return project.url
 
 
