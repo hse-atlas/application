@@ -1,17 +1,23 @@
 from uuid import UUID
+# Добавляем импорты для нового эндпоинта
 from fastapi import APIRouter, HTTPException, status, Response, Depends, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import cast, String
 from sqlalchemy.future import select
-import logging # Добавлено: logging
+import logging
 
 from app.database import async_session_maker
-# Изменено: импортируем только нужные функции
-from app.jwt_auth import create_access_token, create_refresh_token
-from app.schemas import RegisterData, LoginData, TokenResponse, ProjectsBase, UserStatus, UsersBase # Добавлено: UsersBase
+# Импортируем нужные функции JWT и зависимости
+from app.jwt_auth import create_access_token, create_refresh_token, get_current_project_user
+# Импортируем схемы и модели
+from app.schemas import (
+    RegisterData, LoginData, TokenResponse, ProjectsBase,
+    UserStatus, UsersBase, UserOut # Добавляем UserOut для ответа /me
+)
 from app.security import verify_password, get_password_hash, password_meets_requirements
+
 
 # Создаем лимитер для защиты от брутфорс-атак
 limiter = Limiter(key_func=get_remote_address)
@@ -175,3 +181,22 @@ async def user_login(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail='Failed to generate authentication tokens'
         )
+
+@router.get("/me",
+            response_model=UserOut, # Используем схему UserOut для ответа
+            tags=["User Auth"], # Тот же тег
+            summary="Get current authenticated project user profile")
+async def get_current_user_profile(
+    # Используем зависимость get_current_project_user,
+    # которая уже проверила токен и тип пользователя ('user')
+    # и вернула объект UsersBase
+    current_user: UsersBase = Depends(get_current_project_user)
+):
+    """
+    Возвращает профиль текущего аутентифицированного пользователя проекта.
+    Требует валидный access token пользователя проекта.
+    """
+    logger.info(f"User profile requested: id={current_user.id}, email={current_user.email}, project_id={current_user.project_id}")
+    # Объект current_user уже содержит все необходимые данные (id, login, email, project_id, role, status)
+    # Pydantic автоматически преобразует его в модель UserOut
+    return current_user
