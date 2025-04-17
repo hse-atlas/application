@@ -302,10 +302,9 @@ def extract_user_info(provider: str, user_info, token_response=None) -> Tuple[st
         raise HTTPException(status_code=500, detail=f"Failed to parse user info from {provider}")
 
 
-# Обработка OAuth для администраторов (без изменений в логике, только импорт Tuple выше)
+# Обработка OAuth для администраторов
 async def process_admin_oauth(email: str, name: str, provider: str, provider_user_id: str, session: AsyncSession):
     logger.info(f"Processing admin OAuth for email={email}, provider={provider}, provider_id={provider_user_id}")
-
     admin = await find_one_or_none_admin(oauth_provider=provider, oauth_user_id=provider_user_id)
 
     if not admin:
@@ -317,7 +316,8 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
                 admin.oauth_user_id = provider_user_id
                 admin.last_login = datetime.utcnow()
                 await session.commit()
-                await session.refresh(admin)
+                # Изменено: Убираем refresh, он не нужен и вызывает ошибку
+                # await session.refresh(admin)
             else:
                 logger.error(f"Admin email {email} already linked to another OAuth account ({admin.oauth_provider}). Cannot link {provider}.")
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already linked to another authentication method.")
@@ -327,22 +327,21 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
             counter = 0
             base_login = login
             while await find_one_or_none_admin(login=login):
-                counter += 1
-                login = f"{base_login}_{counter}"
-                logger.warning(f"Login '{base_login}' exists, trying '{login}'")
-
+                counter += 1; login = f"{base_login}_{counter}"
             admin_data = {
                 "email": email, "login": login, "password": None,
                 "oauth_provider": provider, "oauth_user_id": provider_user_id,
                 "last_login": datetime.utcnow()
             }
-            admin = await add_admin(**admin_data)
+            admin = await add_admin(**admin_data) # add_admin вернет уже "прикрепленный" объект
             logger.info(f"New admin created via OAuth: ID={admin.id}, login={admin.login}")
+            # Здесь refresh не нужен, т.к. add_admin возвращает объект из сессии после commit
     else:
         logger.info(f"Found existing admin by OAuth {provider} ID {provider_user_id}. Updating last login.")
         admin.last_login = datetime.utcnow()
         await session.commit()
-        await session.refresh(admin)
+        # Изменено: Убираем refresh, он не нужен и вызывает ошибку
+        # await session.refresh(admin)
 
     logger.info(f"Creating JWT tokens for admin ID: {admin.id}")
     access_token = await create_access_token({"sub": str(admin.id)}, user_type="admin")
@@ -352,23 +351,18 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
     redirect_url = f"/?type=admin&access_token={access_token}&refresh_token={refresh_token}"
     response = RedirectResponse(url=redirect_url)
     logger.info(f"Redirecting admin to: {redirect_url}")
-
-    response.set_cookie(
-        key="admins_access_token", value=access_token, httponly=True, secure=True, samesite="strict"
-    )
-    response.set_cookie(
-        key="admins_refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict"
-    )
+    response.set_cookie(key="admins_access_token", value=access_token, httponly=True, secure=True, samesite="strict")
+    response.set_cookie(key="admins_refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict")
     logger.info("Admin auth cookies set.")
-
     return response
 
 
-# Обработка OAuth для пользователей (без изменений в логике, только импорт Tuple выше)
+# Обработка OAuth для пользователей
 async def process_user_oauth(email: str, name: str, provider: str, provider_user_id: str, project_id: UUID,
                              session: AsyncSession):
     logger.info(f"Processing user OAuth for email={email}, project_id={project_id}, provider={provider}, provider_id={provider_user_id}")
 
+    # Используем session.get для проверки проекта, т.к. он нужен только для проверки
     project = await session.get(ProjectsBase, str(project_id))
     if not project:
         logger.error(f"Project {project_id} not found during user OAuth processing.")
@@ -385,7 +379,8 @@ async def process_user_oauth(email: str, name: str, provider: str, provider_user
                 user.oauth_user_id = provider_user_id
                 user.last_login = datetime.utcnow()
                 await session.commit()
-                await session.refresh(user)
+                 # Изменено: Убираем refresh
+                # await session.refresh(user)
             else:
                  logger.error(f"User email {email} in project {project_id} already linked to another OAuth account ({user.oauth_provider}). Cannot link {provider}.")
                  raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already linked to another authentication method in this project.")
@@ -395,27 +390,25 @@ async def process_user_oauth(email: str, name: str, provider: str, provider_user
             counter = 0
             base_login = login
             while await find_one_or_none_user(login=login, project_id=str(project_id)):
-                counter += 1
-                login = f"{base_login}_{counter}"
-                logger.warning(f"Login '{base_login}' exists in project {project_id}, trying '{login}'")
-
+                counter += 1; login = f"{base_login}_{counter}"
             user_data = {
                 "email": email, "login": login, "password": None,
-                "project_id": str(project_id), "role": "user", "status": UserStatus.ACTIVE, # Используем Enum
+                "project_id": str(project_id), "role": "user", "status": UserStatus.ACTIVE,
                 "oauth_provider": provider, "oauth_user_id": provider_user_id,
                 "last_login": datetime.utcnow()
             }
-            user = await add_user(**user_data)
+            user = await add_user(**user_data) # add_user возвращает персистентный объект
             logger.info(f"New user created via OAuth: ID={user.id}, login={user.login}, project={project_id}")
+            # Refresh не нужен
     else:
          logger.info(f"Found existing user by OAuth {provider} ID {provider_user_id} in project {project_id}. Updating last login.")
-         # Добавлено: Проверка статуса заблокированного пользователя при входе через OAuth
          if user.status == UserStatus.BLOCKED:
               logger.warning(f"OAuth login failed for user {user.id} ({email}): account is blocked.")
               raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is blocked")
          user.last_login = datetime.utcnow()
          await session.commit()
-         await session.refresh(user)
+         # Изменено: Убираем refresh
+         # await session.refresh(user)
 
     logger.info(f"Creating JWT tokens for user ID: {user.id}")
     access_token = await create_access_token({"sub": str(user.id)}, user_type="user")
@@ -425,13 +418,7 @@ async def process_user_oauth(email: str, name: str, provider: str, provider_user
     redirect_url = f"/?type=user&project_id={project_id}&access_token={access_token}&refresh_token={refresh_token}"
     response = RedirectResponse(url=redirect_url)
     logger.info(f"Redirecting user to: {redirect_url}")
-
-    response.set_cookie(
-        key="users_access_token", value=access_token, httponly=True, secure=True, samesite="strict"
-    )
-    response.set_cookie(
-        key="users_refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict"
-    )
+    response.set_cookie(key="users_access_token", value=access_token, httponly=True, secure=True, samesite="strict")
+    response.set_cookie(key="users_refresh_token", value=refresh_token, httponly=True, secure=True, samesite="strict")
     logger.info("User auth cookies set.")
-
     return response
