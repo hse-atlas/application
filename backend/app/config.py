@@ -29,7 +29,7 @@ class Config(BaseSettings):
 
     # --- Настройки токенов АДМИНИСТРАТОРОВ ---
     # Добавлено: Отдельные настройки времени жизни для админов
-    ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES", "60")) # Например, 1 час
+    ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES", "3")) # Например, 1 час
     ADMIN_REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("ADMIN_REFRESH_TOKEN_EXPIRE_DAYS", "90")) # Например, 90 дней
 
     # --- Настройки токенов ПОЛЬЗОВАТЕЛЕЙ ---
