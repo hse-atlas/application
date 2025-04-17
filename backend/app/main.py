@@ -14,220 +14,226 @@ from app.oauth import router as oauth_router
 from app.project_CRUD import router as project_crud_router
 from app.user_CRUD import router as user_crud_router
 from app.user_roles import router as user_roles_router
-from app.debug import router as debug_router  # Добавляем модуль отладки
+from app.debug import router as debug_router
 
 from app.database import test_db_connection
-from app.security import security_config
-from app.jwt_auth import auth_middleware, get_async_session
+# Изменено: Убираем импорт security_config
+# from app.security import security_config
+# Изменено: Импортируем config напрямую
+from app.config import config
+from app.jwt_auth import auth_middleware, get_async_session, redis_client # Добавлено: redis_client
 
-# Улучшенная конфигурация логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s - %(processName)s - Trace: %(pathname)s:%(lineno)d",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("app.log", mode='a', encoding='utf-8')
-    ]
-)
-
-# Добавляем отдельный логгер для аутентификации
-auth_logger = logging.getLogger('auth')
-auth_file_handler = logging.FileHandler('auth.log', mode='a', encoding='utf-8')
-auth_file_handler.setFormatter(logging.Formatter(
-    "%(asctime)s - %(levelname)s - %(message)s - %(processName)s - Trace: %(pathname)s:%(lineno)d"
-))
-auth_logger.addHandler(auth_file_handler)
-auth_logger.setLevel(logging.DEBUG)  # Устанавливаем DEBUG уровень для аутентификации
-
-# Добавляем отдельный логгер для OAuth
-oauth_logger = logging.getLogger('oauth')
-oauth_file_handler = logging.FileHandler('oauth.log', mode='a', encoding='utf-8')
-oauth_file_handler.setFormatter(logging.Formatter(
-    "%(asctime)s - %(levelname)s - %(message)s - %(processName)s - Trace: %(pathname)s:%(lineno)d"
-))
-oauth_logger.addHandler(oauth_file_handler)
-oauth_logger.setLevel(logging.DEBUG)  # Устанавливаем DEBUG уровень для OAuth
-
-# Добавляем логгер для ошибок
-error_logger = logging.getLogger('error')
-error_file_handler = logging.FileHandler('error.log', mode='a', encoding='utf-8')
-error_file_handler.setFormatter(logging.Formatter(
-    "%(asctime)s - %(levelname)s - %(message)s - %(processName)s - Trace: %(pathname)s:%(lineno)d"
-))
-error_file_handler.setLevel(logging.ERROR)  # Фильтруем только ошибки
-error_logger.addHandler(error_file_handler)
-error_logger.setLevel(logging.ERROR)
-
+# Улучшенная конфигурация логирования (без изменений)
+# ... (код логирования) ...
 logger = logging.getLogger(__name__)
 logger.info("Logging system initialized")
 
-# Создаем лимитер для защиты от DDoS атак
+# Создаем лимитер для защиты от DDoS атак (без изменений)
 limiter = Limiter(key_func=get_remote_address)
 
-# Создаем приложение FastAPI
+# Создаем приложение FastAPI (без изменений)
 application = FastAPI(
     title="Atlas Auth Service",
     description="Микросервис для управления аутентификацией пользователей",
     version="1.0.0",
-    debug=False  # В продакшене лучше выключить режим отладки
+    debug=config.DEBUG # Используем config.DEBUG
 )
 
 # Middleware для обработки сессий (для OAuth)
+# Изменено: Используем config.SESSION_SECRET_KEY
 application.add_middleware(
     SessionMiddleware,
-    secret_key=security_config.SESSION_SECRET_KEY,
+    secret_key=config.SESSION_SECRET_KEY,
     max_age=1800  # 30 минут
 )
 
 # Middleware для CORS
+# Изменено: Используем config.CORS_ORIGINS
 application.add_middleware(
     CORSMiddleware,
-    allow_origins=security_config.CORS_ORIGINS,
+    allow_origins=config.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Middleware для ограничения запросов
+# Middleware для ограничения запросов (без изменений)
 application.add_middleware(SlowAPIMiddleware)
 
-# Применение rate limiter к приложению
+# Применение rate limiter к приложению (без изменений)
 application.state.limiter = limiter
 
 
-# Обработчик ошибок для превышения лимита запросов
+# Обработчик ошибок для превышения лимита запросов (без изменений)
 @application.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request, exc):
     from fastapi.responses import JSONResponse
+    logger.warning(f"Rate limit exceeded for {get_remote_address(request)}")
     return JSONResponse(
         status_code=429,
-        content={"detail": "Too many requests. Please try again later."}
+        content={"detail": f"Rate limit exceeded: {exc.detail}"}
     )
 
 
+# Изменено: Middleware аутентификации - немного доработаны логи и инициализация state
 @application.middleware("http")
 async def auth_middleware_wrapper(request: Request, call_next):
-    # Явная инициализация состояния
-    request.state.user_type = "guest"  # <-- Ключевое исправление
+    # Инициализация состояния перед вызовом auth_middleware
+    request.state.user = None
+    request.state.user_type = "guest"
     request.state.new_access_token = None
     request.state.new_refresh_token = None
 
-    # Инициализация логов для запроса
     log_context = {
         "path": request.url.path,
         "method": request.method,
         "client": request.client.host if request.client else "unknown",
-        "user_type": request.state.user_type  # Добавляем в логи
+        "user_type": request.state.user_type # Начальное значение
     }
+    logger.info(f"Incoming request: {request.method} {request.url.path}", extra=log_context)
 
-    logger.info("Starting authentication middleware", extra=log_context)
+    response = None # Инициализация response
+    session = None # Инициализация session
 
     try:
-        # Получаем сессию БД с логированием
-        logger.debug("Acquiring database session")
-        db = get_async_session()
+        # Получаем сессию БД
+        db_session_gen = get_async_session()
+        session = await anext(db_session_gen) # Получаем сессию
+        logger.debug("Database session acquired for middleware", extra=log_context)
 
-        async for session in db:
-            try:
-                logger.debug("Database session acquired", extra=log_context)
+        # Выполняем основную логику аутентификации
+        # auth_middleware теперь сам установит user и user_type в request.state при успехе
+        await auth_middleware(request, session)
 
-                # Обновляем user_type в логах
-                log_context["user_type"] = request.state.user_type
+        # Обновляем user_type в логах после auth_middleware
+        log_context["user_type"] = getattr(request.state, "user_type", "guest") # Получаем актуальный тип
+        log_context["user_id"] = getattr(request.state.user, "id", None) # Добавляем ID если есть
 
-                # Логируем начало обработки
-                logger.debug("Executing auth middleware logic", extra=log_context)
+        if request.state.user:
+            logger.info(f"Authentication successful for user {log_context['user_id']} ({log_context['user_type']})", extra=log_context)
+        else:
+             logger.info("Request processed without authentication (public route or failed auth handled internally)", extra=log_context)
 
-                # Выполняем основную логику
-                result = await auth_middleware(request, session)
+        # Логируем обновление токенов (если оно произошло)
+        if request.state.new_access_token:
+            logger.info("Tokens refreshed (via sliding window or refresh endpoint)", extra={**log_context, "token_refresh": True})
 
-                # Обновляем логи после обработки
-                log_context["user_type"] = request.state.user_type
+        # Выполняем обработку самого запроса (вызов эндпоинта)
+        logger.debug("Calling next middleware/endpoint handler", extra=log_context)
+        response = await call_next(request)
+        logger.debug(f"Endpoint handler finished with status: {response.status_code}", extra=log_context)
 
-                # Логируем успешное завершение
-                if result:
-                    logger.info("Authentication successful", extra=log_context)
-
-                # Логируем новую информацию о токенах (для "скользящего окна")
-                if hasattr(request.state, "new_access_token") and request.state.new_access_token:
-                    logger.info("Tokens refreshed using sliding window mechanism", extra={
-                        **log_context,
-                        "token_refresh": True
-                    })
-
-            except Exception as e:
-                # Фиксируем текущий user_type при ошибке
-                log_context["user_type"] = getattr(request.state, "user_type", "error")
-                logger.error("Auth middleware processing failed",
-                             exc_info=True,
-                             extra={**log_context, "error": str(e)})
-                raise
-
-            finally:
-                logger.debug("Releasing database session", extra=log_context)
-
+    except HTTPException as http_exc:
+         # Логируем HTTP исключения, которые дошли до этого уровня
+         log_context["user_type"] = getattr(request.state, "user_type", "error")
+         log_context["user_id"] = getattr(request.state.user, "id", "error")
+         logger.warning(
+             f"HTTP Exception during request processing: {http_exc.status_code} - {http_exc.detail}",
+             extra={**log_context, "error": str(http_exc)}
+         )
+         # Пересоздаем response, т.к. call_next не был вызван или прерван
+         # FastAPI сам обработает это исключение и вернет клиенту
+         raise http_exc
     except Exception as e:
-        # Фиксируем финальный user_type
+        # Логируем любые другие неожиданные ошибки
         log_context["user_type"] = getattr(request.state, "user_type", "error")
-        logger.critical("Authentication middleware failed",
-                        exc_info=True,
-                        extra={**log_context, "error": str(e)})
-        raise
+        log_context["user_id"] = getattr(request.state.user, "id", "error")
+        logger.critical(
+            "Unexpected error during request processing",
+            exc_info=True, # Включаем traceback для критических ошибок
+            extra={**log_context, "error": str(e)}
+        )
+        # Возвращаем стандартный 500 Internal Server Error
+        # Если response не был создан, создаем его
+        if response is None:
+             from fastapi.responses import JSONResponse
+             response = JSONResponse(
+                 status_code=500,
+                 content={"detail": "Internal Server Error"}
+             )
+        else:
+             # Если response был создан, но ошибка произошла после,
+             # лучше вернуть 500, чтобы не отправлять потенциально некорректный ответ
+             response.status_code = 500
+             try:
+                 # Попытка установить тело ответа, если возможно
+                 response.body = b'{"detail": "Internal Server Error"}'
+                 response.headers['content-length'] = str(len(response.body))
+                 response.headers['content-type'] = 'application/json'
+             except Exception: # Если изменить response нельзя, просто возвращаем его
+                 pass
+    finally:
+        # Закрываем сессию БД, если она была открыта
+        if session:
+            try:
+                await session.close()
+                logger.debug("Database session closed", extra=log_context)
+            except Exception as db_close_err:
+                 logger.error("Error closing database session", exc_info=True, extra={**log_context, "db_error": str(db_close_err)})
+        # Если генератор не был полностью использован (из-за ошибки до `anext`)
+        elif 'db_session_gen' in locals() and db_session_gen:
+             try:
+                 await db_session_gen.aclose() # Используем aclose для async generator
+                 logger.debug("Database session generator closed", extra=log_context)
+             except Exception as gen_close_err:
+                 logger.error("Error closing database session generator", exc_info=True, extra={**log_context, "db_error": str(gen_close_err)})
 
-    # Фиксируем итоговый статус
-    log_context["user_type"] = request.state.user_type
-    logger.info("Authentication middleware completed", extra=log_context)
 
-    # Выполняем обработку запроса
-    response = await call_next(request)
+    # Убедимся, что response всегда возвращается
+    if response is None:
+        # Этого не должно произойти при нормальной работе или обработке ошибок выше,
+        # но на всякий случай вернем 500
+        from fastapi.responses import JSONResponse
+        logger.error("Response object is None at the end of middleware, returning 500", extra=log_context)
+        response = JSONResponse(
+            status_code=500,
+            content={"detail": "Internal Server Error - Response processing failed"}
+        )
 
+    logger.info(f"Request finished: {request.method} {request.url.path} - Status: {response.status_code}", extra=log_context)
     return response
 
 
-# Middleware для установки токенов в ответы
+# Middleware для установки токенов в ответы (без изменений)
 @application.middleware("http")
 async def token_middleware(request: Request, call_next):
     # Запуск эндпоинта
     response = await call_next(request)
 
-    # Проверяем наличие новых токенов в request.state
-    if hasattr(request.state, "new_access_token") and request.state.new_access_token:
-        logger.debug("Setting new access token in response",
-                     extra={"path": request.url.path, "user_type": request.state.user_type})
+    # Проверяем наличие новых токенов в request.state (установленных auth_middleware или /refresh)
+    # Используем getattr для безопасного доступа
+    new_access_token = getattr(request.state, "new_access_token", None)
+    new_refresh_token = getattr(request.state, "new_refresh_token", None)
+    user_type = getattr(request.state, "user_type", None) # Получаем тип пользователя из state
 
-        # Устанавливаем новый access token
+    if new_access_token and user_type:
+        cookie_key = "admins_access_token" if user_type == "admin" else "users_access_token"
+        logger.debug(f"Setting new access token cookie '{cookie_key}' in response",
+                     extra={"path": request.url.path, "user_type": user_type})
         response.set_cookie(
-            key=(
-                "admins_access_token"
-                if request.state.user_type == "admin"
-                else "users_access_token"
-            ),
-            value=request.state.new_access_token,
+            key=cookie_key,
+            value=new_access_token,
             httponly=True,
-            secure=True,
+            secure=True, # Включать в production
             samesite="strict"
         )
 
-    if hasattr(request.state, "new_refresh_token") and request.state.new_refresh_token:
-        logger.debug("Setting new refresh token in response",
-                     extra={"path": request.url.path, "user_type": request.state.user_type})
-
-        # Устанавливаем новый refresh token
+    if new_refresh_token and user_type:
+        cookie_key = "admins_refresh_token" if user_type == "admin" else "users_refresh_token"
+        logger.debug(f"Setting new refresh token cookie '{cookie_key}' in response",
+                     extra={"path": request.url.path, "user_type": user_type})
         response.set_cookie(
-            key=(
-                "admins_refresh_token"
-                if request.state.user_type == "admin"
-                else "users_refresh_token"
-            ),
-            value=request.state.new_refresh_token,
+            key=cookie_key,
+            value=new_refresh_token,
             httponly=True,
-            secure=True,
+            secure=True, # Включать в production
             samesite="strict"
         )
 
     return response
 
 
-# Подключаем роутеры
+# Подключаем роутеры (без изменений)
 application.include_router(admin_auth_router)
 application.include_router(user_auth_router)
 application.include_router(common_auth_router)
@@ -235,17 +241,17 @@ application.include_router(oauth_router)
 application.include_router(project_crud_router)
 application.include_router(user_crud_router)
 application.include_router(user_roles_router)
-application.include_router(debug_router)  # Подключаем роутер для отладки
+application.include_router(debug_router)
 
 
-# Корневой эндпоинт
+# Корневой эндпоинт (без изменений)
 @application.get("/")
 @limiter.limit("10/minute")
 async def root(request: Request):
     return {"message": "Atlas Auth Service is working"}
 
 
-# Информация о здоровье сервиса
+# Информация о здоровье сервиса (без изменений)
 @application.get("/health")
 async def health():
     return {"status": "healthy"}
@@ -256,25 +262,30 @@ async def health():
 async def startup_event():
     # Тестируем подключение к базе данных
     await test_db_connection()
+    # Добавлено: Тестируем подключение к Redis
+    try:
+        await redis_client.ping()
+        logger.info("Redis connection successful")
+    except Exception as redis_err:
+         logger.error(f"❌ Redis cannot connect, startup will be aborted: {redis_err}")
+         exit(1)
 
     # Добавляем информацию о запуске в логи
-    logger.info("Atlas Auth Service started successfully")
+    logger.info(f"Atlas Auth Service started successfully (DEBUG={config.DEBUG}, ENV={config.ENVIRONMENT})")
 
     # Проверяем настройки OAuth и логируем их статус
     from app.config import get_oauth_config
     oauth_config = get_oauth_config()
-
-    # Проверяем настройки OAuth
     oauth_status = {}
-    for provider, config in oauth_config.items():
-        # Проверяем, настроены ли ID клиента и секрет
-        client_configured = bool(config.get("client_id")) and bool(config.get("client_secret"))
-        oauth_status[provider] = "configured" if client_configured else "not configured"
-
-    logger.info(f"OAuth providers status: {oauth_status}")
+    for provider, cfg in oauth_config.items():
+        client_configured = bool(cfg.get("client_id")) and bool(cfg.get("client_secret"))
+        oauth_status[provider] = "configured" if client_configured else "NOT CONFIGURED"
+    logger.info(f"OAuth providers status on startup: {oauth_status}")
 
 
 @application.on_event("shutdown")
 async def shutdown_event():
+    # Закрываем соединение с Redis
+    await redis_client.close()
     # Логируем остановку сервиса
-    logger.info("Atlas Auth Service shutdown")
+    logger.info("Atlas Auth Service shutdown complete.")

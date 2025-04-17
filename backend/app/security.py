@@ -1,10 +1,10 @@
 from typing import Optional, Tuple
 
+# Изменено: Импортируем только config
+from app.config import config
 from passlib.hash import argon2
 
-from app.config import config
-
-# Настройка Argon2 с параметрами из конфигурации
+# Изменено: Контекст Argon2 теперь напрямую использует config
 argon2_context = argon2.using(
     time_cost=config.ARGON2_TIME_COST,
     memory_cost=config.ARGON2_MEMORY_COST,
@@ -13,32 +13,12 @@ argon2_context = argon2.using(
     salt_len=config.ARGON2_SALT_LEN,
 )
 
-
-class SecurityConfig:
-    """Класс с настройками безопасности, инициализируемый из config."""
-    # Pepper - дополнительный секрет, который добавляется к паролю перед хешированием
-    PASSWORD_PEPPER: str = config.PASSWORD_PEPPER
-
-    # Параметры для Argon2
-    ARGON2_TIME_COST: int = config.ARGON2_TIME_COST
-    ARGON2_MEMORY_COST: int = config.ARGON2_MEMORY_COST
-    ARGON2_PARALLELISM: int = config.ARGON2_PARALLELISM
-    ARGON2_HASH_LEN: int = config.ARGON2_HASH_LEN
-    ARGON2_SALT_LEN: int = config.ARGON2_SALT_LEN
-
-    # Параметры для токенов
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = config.ACCESS_TOKEN_EXPIRE_MINUTES
-    REFRESH_TOKEN_EXPIRE_DAYS: int = config.REFRESH_TOKEN_EXPIRE_DAYS
-
-    # Секретный ключ для сессий
-    SESSION_SECRET_KEY: str = config.SESSION_SECRET_KEY
-
-    # CORS настройки
-    CORS_ORIGINS: list = config.CORS_ORIGINS
-
-
-# Создаем экземпляр конфигурации безопасности
-security_config = SecurityConfig()
+# Изменено: Удален класс SecurityConfig и его экземпляр security_config
+# class SecurityConfig:
+#     PASSWORD_PEPPER: str = config.PASSWORD_PEPPER
+#     ARGON2_TIME_COST: int = config.ARGON2_TIME_COST
+#     # ... и т.д. ...
+# security_config = SecurityConfig()
 
 
 def get_password_hash(password: str) -> str:
@@ -49,8 +29,8 @@ def get_password_hash(password: str) -> str:
     Returns:
         Хеш пароля
     """
-    # Добавление перца к паролю перед хешированием
-    peppered_password = f"{password}{security_config.PASSWORD_PEPPER}"
+    # Изменено: Используем config напрямую для перца
+    peppered_password = f"{password}{config.PASSWORD_PEPPER}"
     return argon2_context.hash(peppered_password)
 
 
@@ -63,9 +43,17 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Returns:
         True если пароль верный, иначе False
     """
-    # Добавление перца к проверяемому паролю
-    peppered_password = f"{plain_password}{security_config.PASSWORD_PEPPER}"
-    return argon2_context.verify(peppered_password, hashed_password)
+    # Изменено: Используем config напрямую для перца
+    peppered_password = f"{plain_password}{config.PASSWORD_PEPPER}"
+    # Добавлено: Обработка исключений Passlib для большей надежности
+    try:
+        return argon2_context.verify(peppered_password, hashed_password)
+    except Exception as e:
+        # Логируем ошибку верификации (может быть полезно при отладке хешей)
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Password verification failed: {e}", exc_info=False) # Не логируем стек по умолчанию
+        return False
 
 
 def password_meets_requirements(password: str) -> Tuple[bool, Optional[str]]:
