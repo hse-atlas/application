@@ -1,26 +1,27 @@
-from urllib.parse import urlencode, parse_qs # Добавлено: parse_qs
-
+# Добавлено: Импорт Tuple
+from typing import Optional, Tuple
+from urllib.parse import urlencode, parse_qs
 from uuid import UUID
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, status # Добавлено: status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
-import secrets # Добавлено: secrets
-import logging # Добавлено: logging
+from datetime import datetime, timezone # Добавлено: timezone
+import secrets
+import logging
 
 from app.config import get_oauth_config
-from app.core import add_admin, add_user, find_one_or_none_admin, find_one_or_none_user # Добавлено: find_one_or_none_*
+from app.core import add_admin, add_user, find_one_or_none_admin, find_one_or_none_user
 from app.database import async_session_maker
-from app.jwt_auth import create_access_token, create_refresh_token # Импортируем нужные функции
-from app.schemas import AdminsBase, UsersBase, ProjectsBase # Добавлено: ProjectsBase
-from app.security import get_password_hash # Добавлено: get_password_hash
-from sqlalchemy.future import select # Добавлено: select
+from app.jwt_auth import create_access_token, create_refresh_token
+from app.schemas import AdminsBase, UsersBase, ProjectsBase, UserStatus # Добавлено: UserStatus
+from app.security import get_password_hash
+from sqlalchemy.future import select
 
 router = APIRouter(prefix='/api/auth/oauth', tags=['OAuth Authentication'])
 
 # Логгер для OAuth
-logger = logging.getLogger('oauth') # Используем логгер 'oauth'
+logger = logging.getLogger('oauth')
 
 # Конфигурация OAuth провайдеров
 OAUTH_PROVIDERS = get_oauth_config()
@@ -44,14 +45,11 @@ async def admin_oauth_login(provider: str, request: Request):
          logger.error(f"OAuth provider '{provider}' is not configured properly (missing client_id or client_secret).")
          raise HTTPException(status_code=503, detail=f"OAuth provider {provider} not configured")
 
-
-    # Создаем state для защиты от CSRF
     state = secrets.token_urlsafe(16)
     request.session["oauth_state"] = state
     request.session["user_type"] = "admin"
     logger.debug(f"Generated state for admin OAuth: {state}")
 
-    # Формируем URL авторизации
     params = {
         "client_id": provider_config["client_id"],
         "redirect_uri": provider_config["redirect_uri"],
@@ -59,10 +57,8 @@ async def admin_oauth_login(provider: str, request: Request):
         "response_type": "code",
         "state": state
     }
-
-    # Для VK добавляем версию API
     if provider == "vk":
-        params["v"] = provider_config.get("v", "5.131") # Используем default
+        params["v"] = provider_config.get("v", "5.131")
 
     auth_url = f"{provider_config['authorize_url']}?{urlencode(params)}"
     logger.info(f"Redirecting admin to OAuth provider URL: {auth_url}")
@@ -86,7 +82,6 @@ async def user_oauth_login(
          logger.error(f"OAuth provider '{provider}' is not configured properly (missing client_id or client_secret).")
          raise HTTPException(status_code=503, detail=f"OAuth provider {provider} not configured")
 
-    # Проверяем существование проекта
     project_result = await session.execute(select(ProjectsBase).where(ProjectsBase.id == str(project_id)))
     project = project_result.scalar_one_or_none()
 
@@ -94,27 +89,22 @@ async def user_oauth_login(
         logger.error(f"Project not found for OAuth login: {project_id}")
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Проверяем, включен ли OAuth для проекта
     if not project.oauth_enabled:
         logger.warning(f"OAuth is disabled for project {project_id}")
         raise HTTPException(status_code=403, detail="OAuth authentication is not enabled for this project")
 
-    # Проверяем, настроен ли запрашиваемый провайдер для проекта
     project_providers_config = project.oauth_providers or {}
     specific_provider_config = project_providers_config.get(provider, {})
     if not specific_provider_config.get("enabled", False):
         logger.warning(f"Provider '{provider}' is disabled for project {project_id}")
         raise HTTPException(status_code=403, detail=f"Provider '{provider}' is not enabled for this project")
 
-    # Создаем state для защиты от CSRF и сохраняем project_id
     state = secrets.token_urlsafe(16)
     request.session["oauth_state"] = state
     request.session["user_type"] = "user"
-    # Изменено: Сохраняем project_id как строку
     request.session["project_id"] = str(project_id)
     logger.debug(f"Generated state for user OAuth: {state}, project_id: {project_id}")
 
-    # Формируем URL авторизации
     params = {
         "client_id": provider_config["client_id"],
         "redirect_uri": provider_config["redirect_uri"],
@@ -122,8 +112,6 @@ async def user_oauth_login(
         "response_type": "code",
         "state": state
     }
-
-    # Для VK добавляем версию API
     if provider == "vk":
         params["v"] = provider_config.get("v", "5.131")
 
@@ -132,54 +120,45 @@ async def user_oauth_login(
     return RedirectResponse(auth_url)
 
 
-# Обработчик для callback от Google (без изменений)
+# Обработчики callback (без изменений)
 @router.get("/google/callback")
 async def google_callback(request: Request, code: str, state: str, session: AsyncSession = Depends(get_async_session)):
     return await process_oauth_callback("google", code, state, request, session)
 
-
-# Обработчик для callback от GitHub (без изменений)
 @router.get("/github/callback")
 async def github_callback(request: Request, code: str, state: str, session: AsyncSession = Depends(get_async_session)):
     return await process_oauth_callback("github", code, state, request, session)
 
-
-# Обработчик для callback от Yandex (без изменений)
 @router.get("/yandex/callback")
 async def yandex_callback(request: Request, code: str, state: str, session: AsyncSession = Depends(get_async_session)):
     return await process_oauth_callback("yandex", code, state, request, session)
 
-
-# Обработчик для callback от VK (без изменений)
 @router.get("/vk/callback")
 async def vk_callback(request: Request, code: str, state: str, session: AsyncSession = Depends(get_async_session)):
     return await process_oauth_callback("vk", code, state, request, session)
 
 
-# Общая функция для обработки callback от OAuth провайдеров
+# Общая функция для обработки callback от OAuth провайдеров (без изменений в логике, только импорт Tuple)
 async def process_oauth_callback(provider: str, code: str, state: str, request: Request, session: AsyncSession):
     logger.info(f"OAuth callback started for provider: {provider}")
     session_state = request.session.get("oauth_state")
     logger.debug(f"State from session: {session_state}, Received state: {state}")
 
-    # Проверка state для защиты от CSRF
     if not session_state or state != session_state:
         logger.error(f"Invalid state parameter. Session state: {session_state}, Received state: {state}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid state parameter")
 
     provider_config = OAUTH_PROVIDERS.get(provider)
     if not provider_config:
-         # Это не должно произойти, если входные точки проверяют провайдера
          logger.error(f"Configuration for provider '{provider}' not found during callback.")
          raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="OAuth provider configuration error")
 
-    user_type = request.session.get("user_type") # 'admin' или 'user'
+    user_type = request.session.get("user_type")
     if not user_type:
          logger.error("Missing 'user_type' in session during OAuth callback.")
          raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session expired or invalid user type")
     logger.info(f"User type from session: {user_type}")
 
-    # Обмен кода на токен
     token_data = {
         "client_id": provider_config["client_id"],
         "client_secret": provider_config["client_secret"],
@@ -194,9 +173,8 @@ async def process_oauth_callback(provider: str, code: str, state: str, request: 
             logger.info(f"Exchanging code for token with URL: {provider_config['token_url']}")
             response = await client.post(provider_config["token_url"], data=token_data, headers=headers)
             logger.info(f"Token exchange response status: {response.status_code}")
-            response.raise_for_status() # Вызовет исключение для 4xx/5xx
+            response.raise_for_status()
 
-            # Обработка ответа
             if provider == "github" and "application/x-www-form-urlencoded" in response.headers.get("content-type", ""):
                 token_response = parse_qs(response.text)
                 access_token = token_response.get("access_token", [None])[0]
@@ -212,17 +190,15 @@ async def process_oauth_callback(provider: str, code: str, state: str, request: 
             token_preview = access_token[:10] + "..."
             logger.info(f"Access token obtained, starts with: {token_preview}")
 
-
-            # Получение информации о пользователе
             user_info_headers = {"Authorization": f"Bearer {access_token}"}
             user_info_params = {}
             if provider == "vk":
                 user_info_params = {
-                    "fields": "email,screen_name", # Добавим screen_name для логина
+                    "fields": "email,screen_name",
                     "access_token": access_token,
                     "v": provider_config.get("v", "5.131")
                 }
-                user_info_headers = {} # VK не использует Authorization header
+                user_info_headers = {}
 
             logger.info(f"Getting user info from URL: {provider_config['userinfo_url']}")
             user_info_response = await client.get(
@@ -235,7 +211,6 @@ async def process_oauth_callback(provider: str, code: str, state: str, request: 
             user_info = user_info_response.json()
             logger.info(f"User info received: {user_info}")
 
-            # Извлечение email, имени и ID провайдера
             email, name, provider_user_id = extract_user_info(provider, user_info, token_response)
             logger.info(f"Extracted user info: email={email}, name={name}, provider_id={provider_user_id}")
 
@@ -243,8 +218,6 @@ async def process_oauth_callback(provider: str, code: str, state: str, request: 
                 logger.error(f"Could not extract provider's user ID for {provider}")
                 raise HTTPException(status_code=500, detail="Failed to get user ID from provider")
 
-
-            # Вызов соответствующей функции обработки
             if user_type == "admin":
                 logger.info(f"Processing admin OAuth callback for email={email}")
                 final_response = await process_admin_oauth(email, name, provider, str(provider_user_id), session)
@@ -254,7 +227,6 @@ async def process_oauth_callback(provider: str, code: str, state: str, request: 
                     logger.error("Missing project_id in session for user OAuth callback.")
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing project context")
                 try:
-                    # Преобразуем UUID обратно
                     project_id = UUID(project_id_str)
                 except ValueError:
                      logger.error(f"Invalid project_id format in session: {project_id_str}")
@@ -263,7 +235,6 @@ async def process_oauth_callback(provider: str, code: str, state: str, request: 
                 logger.info(f"Processing user OAuth callback for email={email}, project_id={project_id}")
                 final_response = await process_user_oauth(email, name, provider, str(provider_user_id), project_id, session)
 
-            # Очистка сессии при успехе
             logger.info("OAuth process completed successfully, cleaning up session state.")
             if "oauth_state" in request.session: del request.session["oauth_state"]
             if "user_type" in request.session: del request.session["user_type"]
@@ -280,6 +251,7 @@ async def process_oauth_callback(provider: str, code: str, state: str, request: 
 
 
 # Функция для извлечения email, имени и ID пользователя из ответа разных провайдеров
+# Изменено: Добавлен импорт Tuple в начале файла
 def extract_user_info(provider: str, user_info, token_response=None) -> Tuple[str, str, str]:
     email = None
     name = None
@@ -289,81 +261,69 @@ def extract_user_info(provider: str, user_info, token_response=None) -> Tuple[st
         if provider == "google":
             email = user_info.get("email")
             name = user_info.get("name") or user_info.get("given_name", "")
-            provider_user_id = user_info.get("sub") # Google User ID
+            provider_user_id = user_info.get("sub")
         elif provider == "github":
             email = user_info.get("email")
-            # Имя пользователя GitHub часто используется как логин
             name = user_info.get("login") or user_info.get("name", "")
-            provider_user_id = user_info.get("id") # GitHub User ID (integer)
+            provider_user_id = user_info.get("id")
         elif provider == "yandex":
             email = user_info.get('default_email')
             if not email and 'emails' in user_info:
                 emails = user_info.get('emails', [])
                 email = emails[0] if emails else None
             name = user_info.get('display_name') or user_info.get('real_name', '') or user_info.get('login')
-            provider_user_id = user_info.get("id") # Yandex User ID
+            provider_user_id = user_info.get("id")
         elif provider == "vk":
-            # VK возвращает email в ответе токена, если запрошено
             if token_response:
                 email = token_response.get("email")
-            # User Info содержит массив
             if user_info.get("response") and len(user_info["response"]) > 0:
                 vk_user = user_info["response"][0]
-                # Если email не пришел в токене, попробуем достать из user_info (маловероятно)
                 if not email: email = vk_user.get("email")
                 name = f"{vk_user.get('first_name', '')} {vk_user.get('last_name', '')}".strip()
-                if not name: name = vk_user.get("screen_name") # Используем screen_name если нет имени/фамилии
-                provider_user_id = vk_user.get("id") # VK User ID (integer)
+                if not name: name = vk_user.get("screen_name")
+                provider_user_id = vk_user.get("id")
         else:
              logger.error(f"Extraction logic not implemented for provider: {provider}")
 
-        # Базовая валидация
         if not email:
             logger.warning(f"Email not found in OAuth response from {provider}. User Info: {user_info}, Token Resp: {token_response}")
             raise HTTPException(status_code=400, detail="Email not provided by OAuth provider or permission denied.")
         if not name:
-            # Генерируем имя из email если не найдено
             name = email.split('@')[0]
             logger.warning(f"Name not found for provider {provider}, generated from email: {name}")
-        if provider_user_id is None: # ID может быть 0, поэтому проверяем на None
+        if provider_user_id is None:
              logger.error(f"Provider user ID not found for provider {provider}")
              raise ValueError("Provider user ID missing")
 
-        return email, name, str(provider_user_id) # Возвращаем ID как строку для единообразия
+        return email, name, str(provider_user_id)
 
     except (KeyError, IndexError, TypeError, ValueError) as e:
         logger.error(f"Error extracting user info for {provider}: {str(e)}. User Info: {user_info}, Token Resp: {token_response}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to parse user info from {provider}")
 
 
-# Обработка OAuth для администраторов
+# Обработка OAuth для администраторов (без изменений в логике, только импорт Tuple выше)
 async def process_admin_oauth(email: str, name: str, provider: str, provider_user_id: str, session: AsyncSession):
     logger.info(f"Processing admin OAuth for email={email}, provider={provider}, provider_id={provider_user_id}")
 
-    # Проверяем, существует ли администратор с таким provider_id
     admin = await find_one_or_none_admin(oauth_provider=provider, oauth_user_id=provider_user_id)
 
     if not admin:
-        # Если нет, проверяем по email (вдруг он регистрировался паролем)
         admin = await find_one_or_none_admin(email=email)
         if admin:
-            # Если нашли по email, но без OAuth данных - обновляем
             if not admin.oauth_provider:
                 logger.info(f"Found existing admin by email {email}, linking OAuth provider {provider} (ID: {provider_user_id})")
                 admin.oauth_provider = provider
                 admin.oauth_user_id = provider_user_id
-                admin.last_login = datetime.now(timezone.utc) # Обновляем время входа
+                admin.last_login = datetime.now(timezone.utc)
                 await session.commit()
                 await session.refresh(admin)
             else:
-                # Если нашли по email, но с *другим* OAuth - это конфликт
                 logger.error(f"Admin email {email} already linked to another OAuth account ({admin.oauth_provider}). Cannot link {provider}.")
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already linked to another authentication method.")
         else:
-            # Если не нашли ни по ID, ни по email - создаем нового админа
             logger.info(f"Admin with email {email} not found, creating new admin via OAuth {provider}")
             login = name if name else email.split('@')[0]
-            # Проверка уникальности логина
             counter = 0
             base_login = login
             while await find_one_or_none_admin(login=login):
@@ -371,40 +331,28 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
                 login = f"{base_login}_{counter}"
                 logger.warning(f"Login '{base_login}' exists, trying '{login}'")
 
-            # Пароль не нужен для OAuth
             admin_data = {
-                "email": email,
-                "login": login,
-                "password": None, # Пароль не устанавливаем
-                "oauth_provider": provider,
-                "oauth_user_id": provider_user_id,
+                "email": email, "login": login, "password": None,
+                "oauth_provider": provider, "oauth_user_id": provider_user_id,
                 "last_login": datetime.now(timezone.utc)
             }
             admin = await add_admin(**admin_data)
             logger.info(f"New admin created via OAuth: ID={admin.id}, login={admin.login}")
     else:
-        # Если нашли по provider_id, просто обновляем время входа
         logger.info(f"Found existing admin by OAuth {provider} ID {provider_user_id}. Updating last login.")
         admin.last_login = datetime.now(timezone.utc)
         await session.commit()
         await session.refresh(admin)
 
-
-    # Создаем JWT токены
     logger.info(f"Creating JWT tokens for admin ID: {admin.id}")
-    # Изменено: Передаем user_type="admin"
     access_token = await create_access_token({"sub": str(admin.id)}, user_type="admin")
     refresh_token = await create_refresh_token({"sub": str(admin.id)}, user_type="admin")
     logger.info(f"Tokens created for admin {admin.id}")
 
-    # Создаем ответ с перенаправлением (например, на фронтенд админки)
-    # Передаем токены в параметрах URL для простоты обработки на фронте
-    # В реальном приложении может быть другой механизм передачи (например, postMessage)
     redirect_url = f"/?type=admin&access_token={access_token}&refresh_token={refresh_token}"
     response = RedirectResponse(url=redirect_url)
     logger.info(f"Redirecting admin to: {redirect_url}")
 
-    # Устанавливаем токены в cookie (рекомендуемый способ)
     response.set_cookie(
         key="admins_access_token", value=access_token, httponly=True, secure=True, samesite="strict"
     )
@@ -416,25 +364,21 @@ async def process_admin_oauth(email: str, name: str, provider: str, provider_use
     return response
 
 
-# Обработка OAuth для пользователей
+# Обработка OAuth для пользователей (без изменений в логике, только импорт Tuple выше)
 async def process_user_oauth(email: str, name: str, provider: str, provider_user_id: str, project_id: UUID,
                              session: AsyncSession):
     logger.info(f"Processing user OAuth for email={email}, project_id={project_id}, provider={provider}, provider_id={provider_user_id}")
 
-    # Проверяем, существует ли проект (на всякий случай)
     project = await session.get(ProjectsBase, str(project_id))
     if not project:
         logger.error(f"Project {project_id} not found during user OAuth processing.")
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Проверяем, существует ли пользователь с таким provider_id в этом проекте
     user = await find_one_or_none_user(oauth_provider=provider, oauth_user_id=provider_user_id, project_id=str(project_id))
 
     if not user:
-        # Если нет, проверяем по email в этом проекте
         user = await find_one_or_none_user(email=email, project_id=str(project_id))
         if user:
-            # Если нашли по email, но без OAuth - обновляем
             if not user.oauth_provider:
                 logger.info(f"Found existing user by email {email} in project {project_id}, linking OAuth provider {provider} (ID: {provider_user_id})")
                 user.oauth_provider = provider
@@ -443,14 +387,11 @@ async def process_user_oauth(email: str, name: str, provider: str, provider_user
                 await session.commit()
                 await session.refresh(user)
             else:
-                 # Если нашли по email, но с *другим* OAuth - конфликт
-                logger.error(f"User email {email} in project {project_id} already linked to another OAuth account ({user.oauth_provider}). Cannot link {provider}.")
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already linked to another authentication method in this project.")
+                 logger.error(f"User email {email} in project {project_id} already linked to another OAuth account ({user.oauth_provider}). Cannot link {provider}.")
+                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already linked to another authentication method in this project.")
         else:
-             # Если не нашли ни по ID, ни по email - создаем нового пользователя
             logger.info(f"User with email {email} not found in project {project_id}, creating new user via OAuth {provider}")
             login = name if name else email.split('@')[0]
-            # Проверка уникальности логина в рамках проекта
             counter = 0
             base_login = login
             while await find_one_or_none_user(login=login, project_id=str(project_id)):
@@ -459,40 +400,32 @@ async def process_user_oauth(email: str, name: str, provider: str, provider_user
                 logger.warning(f"Login '{base_login}' exists in project {project_id}, trying '{login}'")
 
             user_data = {
-                "email": email,
-                "login": login,
-                "password": None, # Пароль не нужен
-                "project_id": str(project_id), # Сохраняем как строку
-                "role": "user", # Роль по умолчанию
-                "status": "active", # Статус по умолчанию
-                "oauth_provider": provider,
-                "oauth_user_id": provider_user_id,
+                "email": email, "login": login, "password": None,
+                "project_id": str(project_id), "role": "user", "status": UserStatus.ACTIVE, # Используем Enum
+                "oauth_provider": provider, "oauth_user_id": provider_user_id,
                 "last_login": datetime.now(timezone.utc)
             }
             user = await add_user(**user_data)
             logger.info(f"New user created via OAuth: ID={user.id}, login={user.login}, project={project_id}")
     else:
-         # Если нашли по provider_id, просто обновляем время входа
          logger.info(f"Found existing user by OAuth {provider} ID {provider_user_id} in project {project_id}. Updating last login.")
+         # Добавлено: Проверка статуса заблокированного пользователя при входе через OAuth
+         if user.status == UserStatus.BLOCKED:
+              logger.warning(f"OAuth login failed for user {user.id} ({email}): account is blocked.")
+              raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is blocked")
          user.last_login = datetime.now(timezone.utc)
          await session.commit()
          await session.refresh(user)
 
-    # Создаем JWT токены
     logger.info(f"Creating JWT tokens for user ID: {user.id}")
-    # Изменено: Передаем user_type="user"
     access_token = await create_access_token({"sub": str(user.id)}, user_type="user")
     refresh_token = await create_refresh_token({"sub": str(user.id)}, user_type="user")
     logger.info(f"Tokens created for user {user.id}")
 
-    # Редирект на страницу проекта (или другую указанную в настройках проекта)
-    # Передаем токены в параметрах URL
-    # TODO: Возможно, стоит использовать URL из project.url или специальный callback URL проекта
     redirect_url = f"/?type=user&project_id={project_id}&access_token={access_token}&refresh_token={refresh_token}"
     response = RedirectResponse(url=redirect_url)
     logger.info(f"Redirecting user to: {redirect_url}")
 
-    # Устанавливаем токены в cookie
     response.set_cookie(
         key="users_access_token", value=access_token, httponly=True, secure=True, samesite="strict"
     )
