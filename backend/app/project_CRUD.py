@@ -16,7 +16,8 @@ from app.schemas import (
     ProjectOAuthSettings,
 )
 
-router = APIRouter(prefix="/projects", tags=["Projects CRUD"])
+#router = APIRouter(prefix="/projects", tags=["Projects CRUD"])
+router = APIRouter(tags=["Projects CRUD"])
 
 
 async def get_async_session() -> AsyncSession:
