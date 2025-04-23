@@ -67,6 +67,11 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
       }
 
       const values = await form.validateFields();
+      if (oauthEnabled && activeProviders.length === 0) {
+        message.error("At least one OAuth provider must be enabled when OAuth is enabled.");
+        setLoading(false);
+        return;
+      }
 
       const requestData = {
         ...values,
@@ -137,39 +142,39 @@ const EditProjectModal = ({ visible, onCancel, onSave, initialValues }) => {
               onChange={(checked) => setOauthEnabled(checked)}
             />
             <span>{oauthEnabled ? 'Enabled' : 'Disabled'}</span>
-            {oauthEnabled && activeProviders.length > 0 && (
+            {oauthEnabled && activeProviders.length > 0 ? (
               <div style={{ marginLeft: 'auto' }}>
                 <span style={{ marginRight: 8 }}>Active providers:</span>
                 {activeProviders.map(provider => (
                   <Tag color="blue" key={provider}>{provider}</Tag>
                 ))}
               </div>
-            )}
+            )
+              : null
+            }
           </div>
         </Form.Item>
 
-        {oauthEnabled && (
-          <div style={{ margin: '16px 0', padding: '16px', border: '1px solid #d9d9d9', borderRadius: '4px' }}>
-            <h4 style={{ marginBottom: '16px' }}>Configure OAuth Providers</h4>
+        {oauthEnabled ? <div style={{ margin: '16px 0', padding: '16px', border: '1px solid #d9d9d9', borderRadius: '4px' }}>
+          <h4 style={{ marginBottom: '16px' }}>Configure OAuth Providers</h4>
 
-            {["google", "github", "yandex", "vk"].map((provider) => (
-              <div key={provider} style={{ marginBottom: "16px" }}>
-                <Form.Item label={`${provider.charAt(0).toUpperCase() + provider.slice(1)} OAuth`}>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <Switch
-                      checked={oauthProviders[provider]?.enabled || false}
-                      onChange={(checked) => handleProviderToggle(provider, checked)}
-                      style={{ marginRight: 8 }}
-                    />
-                    <span>
-                      {oauthProviders[provider]?.enabled ? 'Enabled' : 'Disabled'}
-                    </span>
-                  </div>
-                </Form.Item>
-              </div>
-            ))}
-          </div>
-        )}
+          {["google", "github", "yandex", "vk"].map((provider) => (
+            <div key={provider} style={{ marginBottom: "16px" }}>
+              <Form.Item label={`${provider.charAt(0).toUpperCase() + provider.slice(1)} OAuth`}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <Switch
+                    checked={oauthProviders[provider]?.enabled || false}
+                    onChange={(checked) => handleProviderToggle(provider, checked)}
+                    style={{ marginRight: 8 }}
+                  />
+                  <span>
+                    {oauthProviders[provider]?.enabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </div>
+              </Form.Item>
+            </div>
+          ))}
+        </div> : null}
       </Form>
 
       <div style={{ textAlign: "right", marginTop: "16px" }}>

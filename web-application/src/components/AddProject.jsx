@@ -14,6 +14,11 @@ const AddProject = ({ visible, onCancel, onAdd }) => {
   const [activeProviders, setActiveProviders] = useState([]);
 
   const handleAddProject = async (values) => {
+    if (oauthEnabled && activeProviders.length === 0) {
+      message.error("At least one OAuth provider must be enabled.");
+      return;
+    }
+
     try {
       const requestData = {
         name: values.name,
@@ -114,7 +119,7 @@ const AddProject = ({ visible, onCancel, onAdd }) => {
               onChange={(checked) => setOauthEnabled(checked)}
             />
             <span>{oauthEnabled ? 'Enabled' : 'Disabled'}</span>
-            {oauthEnabled && activeProviders.length > 0 && (
+            {oauthEnabled && activeProviders.length > 0 ? (
               <div style={{ marginLeft: 'auto' }}>
                 <span style={{ marginRight: 8 }}>Active providers:</span>
                 {activeProviders.map(provider => (
@@ -122,9 +127,9 @@ const AddProject = ({ visible, onCancel, onAdd }) => {
                 ))}
               </div>
             )}
-          </div>
-        </Form.Item>
-
+          </div></Form.Item>
+        
+        
         {oauthEnabled && (
           <div style={{ margin: '16px 0', padding: '16px', border: '1px solid #d9d9d9', borderRadius: '4px' }}>
             <h4 style={{ marginBottom: '16px' }}>Configure OAuth Providers</h4>
