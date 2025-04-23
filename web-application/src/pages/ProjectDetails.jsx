@@ -335,7 +335,7 @@ const ProjectDetails = () => {
             columns={columns}
             rowKey="id"
             pagination={{
-              pageSize: 10,
+              pageSize: 5,
               showSizeChanger: false,
               hideOnSinglePage: true,
               position: ['bottomCenter']

@@ -128,7 +128,7 @@ const Main = () => {
             rowKey="id"
             pagination={{
               position: ['bottomCenter'], // Центрируем пагинацию
-              pageSize: 10, // Фиксированное количество строк
+              pageSize: 5, // Фиксированное количество строк
               showSizeChanger: false, // Убираем выбор количества строк
               showTotal: (total) => `Total ${total} items`, // Опционально: показываем общее количество
               hideOnSinglePage: true // Скрываем пагинацию, если данных меньше pageSize
