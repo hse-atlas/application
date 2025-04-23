@@ -1,6 +1,8 @@
 import "normalize.css";
 import { BrowserRouter as Router, Route, Routes, useLocation } from "react-router-dom";
 import { useEffect } from "react";
+import { useDispatch } from "react-redux";
+import { setUserData } from "./store/userSlice";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Main from "./pages/Main";
@@ -10,9 +12,17 @@ import ProjectDetails from "./pages/ProjectDetails";
 import UserLoginEmbed from "./components/UserLoginEmbed";
 import UserRegisterEmbed from "./components/UserRegisterEmbed";
 import tokenRefreshService from "./services/tokenRefreshService";
-import tokenService from "./services/tokenService";
+import { getUserDataFromStorage, saveTokens, isAuthenticated } from "./services/tokenService";
 
 function AppContent() {
+  const dispatch = useDispatch();
+
+  useEffect(() => {
+    const userData = getUserDataFromStorage();
+    if (userData) {
+      dispatch(setUserData(userData));
+    }
+  }, []);
   const location = useLocation();
 
   useEffect(() => {
@@ -22,7 +32,7 @@ function AppContent() {
     const refreshToken = params.get('refresh_token');
 
     if (accessToken && refreshToken) {
-      // Сохранение токенов через сервис
+      // Сохранение токенов
       tokenService.saveTokens({
         access_token: accessToken,
         refresh_token: refreshToken
@@ -45,7 +55,7 @@ function AppContent() {
         location.pathname.startsWith('/embed/register/');
 
       // Используем метод проверки аутентификации из сервиса
-      if (tokenService.isAuthenticated() && !isEmbedPage) {
+      if (isAuthenticated() && !isEmbedPage) {
         tokenRefreshService.start();
       }
     }

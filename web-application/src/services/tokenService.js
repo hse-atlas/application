@@ -117,6 +117,24 @@ function checkTokenExpiration() {
   };
 }
 
+/**
+ * Сохраняет данные пользователя в localStorage.
+ * @param {Object} userData - Данные пользователя для сохранения.
+ */
+function setUserDataToStorage(userData) {
+  localStorage.setItem('userData', JSON.stringify(userData));
+  console.debug('[TokenService] User data saved to localStorage.');
+}
+
+/**
+ * Получает данные пользователя из localStorage.
+ * @returns {Object|null} - Данные пользователя или null, если данных нет.
+ */
+function getUserDataFromStorage() {
+  const userData = localStorage.getItem('userData');
+  return userData ? JSON.parse(userData) : null;
+}
+
 // Экспортируем API сервиса
 export default {
   getAccessToken,
@@ -126,5 +144,7 @@ export default {
   // synchronizeTokens больше не нужен
   isAuthenticated,
   decodeToken,
-  checkTokenExpiration
+  checkTokenExpiration,
+  setUserDataToStorage,
+  getUserDataFromStorage,
 };
