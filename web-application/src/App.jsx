@@ -12,7 +12,7 @@ import ProjectDetails from "./pages/ProjectDetails";
 import UserLoginEmbed from "./components/UserLoginEmbed";
 import UserRegisterEmbed from "./components/UserRegisterEmbed";
 import tokenRefreshService from "./services/tokenRefreshService";
-import { getUserDataFromStorage, saveTokens, isAuthenticated } from "./services/tokenService";
+import { getUserDataFromStorage, saveTokens, tokenService, isAuthenticated } from "./services/tokenService";
 
 function AppContent() {
   const dispatch = useDispatch();
