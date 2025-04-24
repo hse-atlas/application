@@ -135,6 +135,9 @@ function getUserDataFromStorage() {
   return userData ? JSON.parse(userData) : null;
 }
 
+// Добавим экспорт функции getUserDataFromStorage
+export { getUserDataFromStorage };
+
 // Экспортируем API сервиса
 export default {
   getAccessToken,
