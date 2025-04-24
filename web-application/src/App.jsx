@@ -18,7 +18,7 @@ function AppContent() {
   const dispatch = useDispatch();
 
   useEffect(() => {
-    const userData = getUserDataFromStorage();
+    const userData = tokenService.getUserDataFromStorage();
     if (userData) {
       dispatch(setUserData(userData));
     }
@@ -55,7 +55,7 @@ function AppContent() {
         location.pathname.startsWith('/embed/register/');
 
       // Используем метод проверки аутентификации из сервиса
-      if (isAuthenticated() && !isEmbedPage) {
+      if (tokenService.isAuthenticated() && !isEmbedPage) {
         tokenRefreshService.start();
       }
     }
