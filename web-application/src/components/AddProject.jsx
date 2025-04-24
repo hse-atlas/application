@@ -126,7 +126,7 @@ const AddProject = ({ visible, onCancel, onAdd }) => {
                   <Tag color="blue" key={provider}>{provider}</Tag>
                 ))}
               </div>
-            )}
+            ) : null}
           </div></Form.Item>
         
         
