@@ -34,7 +34,7 @@ const handleOAuthLogin = (provider, projectId) => {
         return;
     }
     const oauthUrl = `https://atlas.appweb.space/api/auth/oauth/user/${provider}/${projectId}`;
-    window.parent.location.href = oauthUrl;
+    window.top.location.href = oauthUrl;
 };
 
 const UserLoginEmbed = () => {
