@@ -130,7 +130,7 @@ const Main = () => {
               position: ['bottomCenter'], // Центрируем пагинацию
               pageSize: 5, // Фиксированное количество строк
               showSizeChanger: false, // Убираем выбор количества строк
-              showTotal: (total) => `Total ${total} items`, // Опционально: показываем общее количество
+              showTotal: (total) => `Total ${total} projects`, // Опционально: показываем общее количество
               hideOnSinglePage: true // Скрываем пагинацию, если данных меньше pageSize
             }}
             onChange={handleTableChange}
