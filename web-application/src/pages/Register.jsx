@@ -3,7 +3,6 @@ import { Form, Input, Button, Typography, message, Divider, Space } from "antd";
 import { GoogleOutlined, WeiboOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import { register } from "../api";
-import tokenService from "../services/tokenService";
 import "../styles/Register.css";
 
 const { Title, Text } = Typography;

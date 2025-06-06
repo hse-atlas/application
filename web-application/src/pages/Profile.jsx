@@ -3,7 +3,6 @@ import { Card, Divider, Button } from "antd";
 import {
   MailOutlined,
   UserOutlined,
-  EditOutlined,
   ArrowLeftOutlined,
 } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
@@ -19,12 +18,6 @@ const Profile = () => {
   const handleBackClick = () => {
     navigate(-1);
   };
-
-  {
-    /*  const handleSettingsClick = () => {
-    navigate("/settings");
-  };*/
-  }
 
   return (
     <div className="profile-page-container">

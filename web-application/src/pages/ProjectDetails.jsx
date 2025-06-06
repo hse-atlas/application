@@ -15,12 +15,10 @@ import {
   Divider,
   Tag,
   Select,
-  Switch,
 } from "antd";
 import {
   ArrowLeftOutlined,
   EditOutlined,
-  DeleteFilled,
   LockOutlined,
   UnlockOutlined,
 } from "@ant-design/icons";
@@ -129,18 +127,6 @@ const ProjectDetails = () => {
       message.error("Failed to copy UUID");
     }
   };
-
-  /*
-  const handleDeleteUser = async (userId) => {
-    try {
-      await deleteUser(userId);
-      setUsers((prev) => prev.filter((user) => user.id !== userId));
-      message.success("User deleted successfully");
-    } catch (error) {
-      message.error(error.response?.data?.detail || "Failed to delete user");
-    }
-  };
-  */
 
   const handleRoleChange = async (userId, newRole) => {
     try {

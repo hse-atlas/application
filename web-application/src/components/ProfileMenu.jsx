@@ -1,5 +1,5 @@
 import React from "react";
-import { Avatar, Dropdown, Menu } from "antd";
+import { Avatar, Dropdown } from "antd";
 import { useNavigate } from "react-router-dom";
 import { UserOutlined, LogoutOutlined } from "@ant-design/icons";
 import tokenRefreshService from "../services/tokenRefreshService";
