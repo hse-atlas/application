@@ -136,7 +136,7 @@ function getUserDataFromStorage() {
 }
 
 // Экспортируем API сервиса
-export default {
+const tokenService = {
   getAccessToken,
   getRefreshToken,
   saveTokens,
@@ -148,3 +148,5 @@ export default {
   setUserDataToStorage,
   getUserDataFromStorage,
 };
+
+export default tokenService;

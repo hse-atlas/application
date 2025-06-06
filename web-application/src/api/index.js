@@ -97,7 +97,7 @@ api.interceptors.response.use(
       originalRequest._isRetryRequest = true; // Помечаем, чтобы избежать рекурсии
 
       try {
-        const newToken = await refreshAuthToken(); // Запускаем обновление (оно само обработает очередь)
+        await refreshAuthToken(); // Запускаем обновление (оно само обработает очередь)
         // Если обновление успешно, новый токен уже будет в localStorage
         // Интерсептор запроса сам подставит его при повторе
         console.log('[API] Retrying original request with new token.');

@@ -43,7 +43,7 @@ const Main = () => {
       }
     };
     fetchData();
-  }, []);
+  }, [dispatch]);
 
   const handleAddProjectClick = () => setIsModalVisible(true);
   const handleModalCancel = () => setIsModalVisible(false);
@@ -133,6 +133,7 @@ const Main = () => {
               showTotal: (total) => `Total ${total} items`, // Опционально: показываем общее количество
               hideOnSinglePage: true // Скрываем пагинацию, если данных меньше pageSize
             }}
+            onChange={handleTableChange}
             loading={loading}
             locale={{
               emptyText: loading ? <Spin tip="Loading..." /> : <Empty description="No Projects Found" />

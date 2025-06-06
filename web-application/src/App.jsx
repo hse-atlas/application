@@ -22,7 +22,7 @@ function AppContent() {
     if (userData) {
       dispatch(setUserData(userData));
     }
-  }, []);
+  }, [dispatch]);
   const location = useLocation();
 
   useEffect(() => {
