@@ -42,6 +42,7 @@ jobs:
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
             set -e
+            cd /root/application
             git pull origin main
             docker-compose down
             docker-compose build
