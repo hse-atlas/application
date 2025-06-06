@@ -45,6 +45,12 @@ const ProjectDetails = () => {
   const [error, setError] = useState(null);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const user = useSelector((state) => state.user.data);
+  const [pagination, setPagination] = useState({
+    current: 1,
+    pageSize: 10,
+    showSizeChanger: true,
+    pageSizeOptions: ['10', '20', '50'],
+  });
 
   useEffect(() => {
     const fetchProjectDetails = async () => {
@@ -168,7 +174,7 @@ const ProjectDetails = () => {
     {
       title: "№",
       key: "index",
-      render: (_, __, index) => index + 1,
+      render: (_, __, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
       width: 50,
       align: "center",
     },
@@ -260,6 +266,13 @@ const ProjectDetails = () => {
     },
   ];
 
+  const handleTableChange = (newPagination) => {
+    setPagination({
+      ...pagination,
+      ...newPagination,
+    });
+  };
+
   if (loading) return <Spin size="large" fullscreen />;
   if (error) return <Alert message={error} type="error" showIcon fullscreen />;
   if (!project)
@@ -321,14 +334,16 @@ const ProjectDetails = () => {
             columns={columns}
             rowKey="id"
             pagination={{
-              pageSize: 5,
-              showSizeChanger: false,
-              hideOnSinglePage: true,
-              position: ['bottomCenter']
+              position: ['bottomCenter'], // Центрируем пагинацию
+              pageSize: 5, // Фиксированное количество строк
+              showSizeChanger: false, // Убираем выбор количества строк
+              showTotal: (total) => `Total ${total} items`, // Опционально: показываем общее количество
+              hideOnSinglePage: true // Скрываем пагинацию, если данных меньше pageSize
             }}
+            onChange={handleTableChange}
             bordered
             locale={{
-              emptyText: <Empty description="No users in project" />
+              emptyText: loading ? <Spin tip="Loading..." /> : <Empty description="No users in project" />
             }}
           />
         </div>
