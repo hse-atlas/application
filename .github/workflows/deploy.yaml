@@ -52,5 +52,6 @@ jobs:
           script: |
             set -e
             cd /root/application
+            git pull origin main
             docker-compose pull
             docker-compose up -d
