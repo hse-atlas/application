@@ -42,3 +42,15 @@ jobs:
           file: ./web-application/Dockerfile
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/atlas-frontend:latest
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: |
+            set -e
+            cd /root/application
+            docker-compose pull
+            docker-compose up -d
