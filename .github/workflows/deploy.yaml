@@ -27,6 +27,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Check backend Docker build
+        run: docker build -t atlas-backend-test ./backend
+
+      - name: Check frontend Docker build
+        run: docker build -t atlas-frontend-test ./web-application
+
       - name: Build and push backend image
         uses: docker/build-push-action@v5
         with:
