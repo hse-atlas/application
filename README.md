@@ -65,7 +65,8 @@
 1. **Клонируйте репозиторий:**
 
 ```bash
-git clone [https://github.com/hse-atlas/application](https://github.com/hse-atlas/application) cd application
+git clone https://github.com/hse-atlas/application
+cd application
 ```
 
 2. **Запустить приложение в Docker:**
